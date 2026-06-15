@@ -38,7 +38,6 @@
       "expo-router",
       "expo-font",
       "expo-local-authentication",
-      "react-native-reanimated",
       [
         "react-native-nfc-manager",
         {
@@ -52,9 +51,9 @@
           "imageWidth": 200,
           "resizeMode": "contain",
           "backgroundColor": "#ffffff"
-        }
-      ]
-    ],
+    }
+  ]
+],
     "experiments": {
       "typedRoutes": true
     }
