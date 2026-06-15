@@ -38,6 +38,7 @@
       "expo-router",
       "expo-font",
       "expo-local-authentication",
+      "react-native-reanimated",
       [
         "react-native-nfc-manager",
         {
