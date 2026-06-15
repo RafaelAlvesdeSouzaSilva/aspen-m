@@ -1,15 +1,19 @@
+import api from "@/services/api";
 import { Ionicons } from "@expo/vector-icons";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useRouter } from "expo-router";
 import { useState } from "react";
 import {
-    KeyboardAvoidingView,
-    Platform,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from "react-native";
 
 export default function Login() {
@@ -17,6 +21,31 @@ export default function Login() {
   const [email, setEmail] = useState("");
   const [senha, setSenha] = useState("");
   const [mostrarSenha, setMostrarSenha] = useState(false);
+  const [carregando, setCarregando] = useState(false);
+
+  const handleLogin = async () => {
+    if (!email || !senha) {
+      Alert.alert("Atenção", "Preencha e-mail e senha.");
+      return;
+    }
+
+    setCarregando(true);
+    try {
+      const { data } = await api.post("/auth/login", { email, senha });
+
+      // Salva token e dados do usuário
+      await AsyncStorage.setItem("token", data.token);
+      await AsyncStorage.setItem("usuario", JSON.stringify(data.usuario));
+
+      router.replace("/(tabs)/dashboard");
+    } catch (err: any) {
+      const msg =
+        err.response?.data?.erro || "Erro ao conectar com o servidor.";
+      Alert.alert("Erro", msg);
+    } finally {
+      setCarregando(false);
+    }
+  };
 
   return (
     <KeyboardAvoidingView
@@ -78,7 +107,7 @@ export default function Login() {
 
           <View style={styles.labelRow}>
             <Text style={styles.label}>Senha *</Text>
-            <TouchableOpacity>
+            <TouchableOpacity onPress={() => router.push("/esqueci-senha")}>
               <Text style={styles.linkSmall}>Esqueceu sua senha?</Text>
             </TouchableOpacity>
           </View>
@@ -107,10 +136,15 @@ export default function Login() {
           </View>
 
           <TouchableOpacity
-            style={styles.btnPrimary}
-            onPress={() => router.replace("/(tabs)/dashboard")}
+            style={[styles.btnPrimary, carregando && styles.btnDisabled]}
+            onPress={handleLogin}
+            disabled={carregando}
           >
-            <Text style={styles.btnPrimaryText}>Entrar</Text>
+            {carregando ? (
+              <ActivityIndicator color="white" />
+            ) : (
+              <Text style={styles.btnPrimaryText}>Entrar</Text>
+            )}
           </TouchableOpacity>
 
           <TouchableOpacity onPress={() => router.push("/register")}>
@@ -210,6 +244,7 @@ const styles = StyleSheet.create({
     marginTop: 4,
     marginBottom: 16,
   },
+  btnDisabled: { opacity: 0.6 },
   btnPrimaryText: { color: "white", fontWeight: "700", fontSize: 15 },
   linkCenter: {
     textAlign: "center",

@@ -8,9 +8,13 @@ import {
   ScrollView,
   KeyboardAvoidingView,
   Platform,
+  Alert,
+  ActivityIndicator,
 } from "react-native";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import api from "@/services/api";
 
 export default function Register() {
   const router = useRouter();
@@ -21,6 +25,43 @@ export default function Register() {
   const [mostrarSenha, setMostrarSenha] = useState(false);
   const [mostrarConfirmar, setMostrarConfirmar] = useState(false);
   const [aceito, setAceito] = useState(false);
+  const [carregando, setCarregando] = useState(false);
+
+  const handleCadastro = async () => {
+    if (!nome || !email || !senha || !confirmar) {
+      Alert.alert("Atenção", "Preencha todos os campos.");
+      return;
+    }
+    if (senha.length < 8) {
+      Alert.alert("Atenção", "A senha deve ter pelo menos 8 caracteres.");
+      return;
+    }
+    if (senha !== confirmar) {
+      Alert.alert("Atenção", "As senhas não coincidem.");
+      return;
+    }
+    if (!aceito) {
+      Alert.alert("Atenção", "Aceite os termos de uso para continuar.");
+      return;
+    }
+
+    setCarregando(true);
+    try {
+      const { data } = await api.post("/auth/cadastro", { nome, email, senha });
+
+      await AsyncStorage.setItem("token", data.token);
+      await AsyncStorage.setItem("usuario", JSON.stringify(data.usuario));
+
+      Alert.alert("Sucesso!", "Conta criada com sucesso!", [
+        { text: "OK", onPress: () => router.replace("/(tabs)/dashboard") },
+      ]);
+    } catch (err: any) {
+      const msg = err.response?.data?.erro || "Erro ao conectar com o servidor.";
+      Alert.alert("Erro", msg);
+    } finally {
+      setCarregando(false);
+    }
+  };
 
   return (
     <KeyboardAvoidingView
@@ -34,9 +75,7 @@ export default function Register() {
           </View>
           <Text style={styles.brand}>ASPEN CORE</Text>
           <Text style={styles.brandSub}>SEGURANÇA DIGITAL</Text>
-          <Text style={styles.tagline}>
-            Comece a se proteger hoje.{"\n"}É grátis.
-          </Text>
+          <Text style={styles.tagline}>Comece a se proteger hoje.{"\n"}É grátis.</Text>
           <View style={styles.bullets}>
             {[
               "Configuração em menos de 2 minutos",
@@ -93,11 +132,7 @@ export default function Register() {
               onChangeText={setSenha}
             />
             <TouchableOpacity onPress={() => setMostrarSenha(!mostrarSenha)}>
-              <Ionicons
-                name={mostrarSenha ? "eye-off-outline" : "eye-outline"}
-                size={16}
-                color="#94A3B8"
-              />
+              <Ionicons name={mostrarSenha ? "eye-off-outline" : "eye-outline"} size={16} color="#94A3B8" />
             </TouchableOpacity>
           </View>
           <Text style={styles.hint}>Use pelo menos 8 caracteres com letras e números.</Text>
@@ -114,18 +149,11 @@ export default function Register() {
               onChangeText={setConfirmar}
             />
             <TouchableOpacity onPress={() => setMostrarConfirmar(!mostrarConfirmar)}>
-              <Ionicons
-                name={mostrarConfirmar ? "eye-off-outline" : "eye-outline"}
-                size={16}
-                color="#94A3B8"
-              />
+              <Ionicons name={mostrarConfirmar ? "eye-off-outline" : "eye-outline"} size={16} color="#94A3B8" />
             </TouchableOpacity>
           </View>
 
-          <TouchableOpacity
-            style={styles.checkboxRow}
-            onPress={() => setAceito(!aceito)}
-          >
+          <TouchableOpacity style={styles.checkboxRow} onPress={() => setAceito(!aceito)}>
             <View style={[styles.checkbox, aceito && styles.checkboxChecked]}>
               {aceito && <Ionicons name="checkmark" size={12} color="white" />}
             </View>
@@ -137,16 +165,20 @@ export default function Register() {
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.btnPrimary, !aceito && styles.btnDisabled]}
-            onPress={() => aceito && router.replace("/login")}
+            style={[styles.btnPrimary, (!aceito || carregando) && styles.btnDisabled]}
+            onPress={handleCadastro}
+            disabled={!aceito || carregando}
           >
-            <Text style={styles.btnPrimaryText}>Criar conta gratuita</Text>
+            {carregando ? (
+              <ActivityIndicator color="white" />
+            ) : (
+              <Text style={styles.btnPrimaryText}>Criar conta gratuita</Text>
+            )}
           </TouchableOpacity>
 
           <TouchableOpacity onPress={() => router.push("/login")}>
             <Text style={styles.backLink}>
-              Já tem conta?{" "}
-              <Text style={styles.linkDestaque}>Entrar</Text>
+              Já tem conta? <Text style={styles.linkDestaque}>Entrar</Text>
             </Text>
           </TouchableOpacity>
         </View>
@@ -160,20 +192,12 @@ const TEAL = "#0b6b6b";
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#f5f7f8" },
   header: {
-    backgroundColor: TEAL,
-    paddingTop: 60,
-    paddingBottom: 32,
-    paddingHorizontal: 24,
+    backgroundColor: TEAL, paddingTop: 60, paddingBottom: 32, paddingHorizontal: 24,
   },
   shieldCircle: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    borderWidth: 2,
-    borderColor: "rgba(255,255,255,0.45)",
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 14,
+    width: 48, height: 48, borderRadius: 24,
+    borderWidth: 2, borderColor: "rgba(255,255,255,0.45)",
+    alignItems: "center", justifyContent: "center", marginBottom: 14,
   },
   brand: { color: "white", fontSize: 13, fontWeight: "700", letterSpacing: 1 },
   brandSub: { color: "rgba(255,255,255,0.7)", fontSize: 10, letterSpacing: 0.5, marginBottom: 10 },
@@ -182,53 +206,30 @@ const styles = StyleSheet.create({
   bulletRow: { flexDirection: "row", alignItems: "center", gap: 8 },
   bulletText: { color: "rgba(255,255,255,0.85)", fontSize: 13 },
   form: {
-    backgroundColor: "white",
-    margin: 16,
-    borderRadius: 16,
-    padding: 24,
-    shadowColor: "#000",
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    elevation: 2,
-    marginBottom: 32,
+    backgroundColor: "white", margin: 16, borderRadius: 16, padding: 24,
+    shadowColor: "#000", shadowOpacity: 0.06, shadowRadius: 8, elevation: 2, marginBottom: 32,
   },
   formTitle: { fontSize: 20, fontWeight: "700", color: "#0f172a", marginBottom: 4 },
   formSub: { fontSize: 13, color: "#64748b", marginBottom: 20 },
   label: { fontSize: 12, color: "#475569", marginBottom: 6, fontWeight: "500" },
   inputWrap: {
-    flexDirection: "row",
-    alignItems: "center",
-    borderWidth: 1,
-    borderColor: "#e2e8f0",
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 11,
-    marginBottom: 14,
-    backgroundColor: "#f8fafc",
+    flexDirection: "row", alignItems: "center",
+    borderWidth: 1, borderColor: "#e2e8f0", borderRadius: 10,
+    paddingHorizontal: 12, paddingVertical: 11, marginBottom: 14, backgroundColor: "#f8fafc",
   },
   inputIcon: { marginRight: 8 },
   input: { flex: 1, fontSize: 14, color: "#0f172a" },
   hint: { fontSize: 11, color: "#94a3b8", marginTop: -10, marginBottom: 14 },
   checkboxRow: { flexDirection: "row", alignItems: "flex-start", gap: 10, marginBottom: 20 },
   checkbox: {
-    width: 18,
-    height: 18,
-    borderRadius: 4,
-    borderWidth: 1.5,
-    borderColor: "#cbd5e1",
-    alignItems: "center",
-    justifyContent: "center",
-    marginTop: 1,
-    flexShrink: 0,
+    width: 18, height: 18, borderRadius: 4, borderWidth: 1.5, borderColor: "#cbd5e1",
+    alignItems: "center", justifyContent: "center", marginTop: 1, flexShrink: 0,
   },
   checkboxChecked: { backgroundColor: TEAL, borderColor: TEAL },
   checkText: { flex: 1, fontSize: 12, color: "#64748b", lineHeight: 18 },
   btnPrimary: {
-    backgroundColor: TEAL,
-    borderRadius: 10,
-    paddingVertical: 14,
-    alignItems: "center",
-    marginBottom: 16,
+    backgroundColor: TEAL, borderRadius: 10, paddingVertical: 14,
+    alignItems: "center", marginBottom: 16,
   },
   btnDisabled: { opacity: 0.5 },
   btnPrimaryText: { color: "white", fontWeight: "700", fontSize: 15 },
