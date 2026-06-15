@@ -1,15 +1,16 @@
 {
   "expo": {
-    "name": "aspen-m",
+    "name": "Aspen Core",
     "slug": "aspen-m",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "myapp",
+    "scheme": "aspencore",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
+    "newArchEnabled": false,
     "ios": {
       "supportsTablet": true,
+      "bundleIdentifier": "com.aspencore.app",
       "infoPlist": {
         "NFCReaderUsageDescription": "Usado para autenticação segura via NFC",
         "NSFaceIDUsageDescription": "Usado para confirmar sua identidade antes de liberar o acesso"
@@ -17,15 +18,16 @@
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/images/adaptive-icon.png",
-        "backgroundColor": "#ffffff"
+        "foregroundImage": "./assets/images/android-icon-foreground.png",
+        "backgroundImage": "./assets/images/android-icon-background.png",
+        "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
+      "package": "com.aspencore.app",
       "permissions": [
         "android.permission.NFC",
         "android.permission.USE_BIOMETRIC",
         "android.permission.USE_FINGERPRINT"
-      ],
-      "package": "com.aspencore.app"
+      ]
     },
     "web": {
       "bundler": "metro",
@@ -36,7 +38,12 @@
       "expo-router",
       "expo-font",
       "expo-local-authentication",
-      "react-native-nfc-manager",
+      [
+        "react-native-nfc-manager",
+        {
+          "nfcPermission": "Usado para autenticação segura sem senha"
+        }
+      ],
       [
         "expo-splash-screen",
         {
