@@ -1,50 +1,311 @@
-# Welcome to your Expo app 👋
+# 🔐 Aspen Core — Segurança Digital
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+> Aplicativo mobile de autenticação segura via NFC e biometria, desenvolvido como Trabalho de Conclusão de Curso (TCC).
 
-## Get started
+---
 
-1. Install dependencies
+## 📱 Sobre o Projeto
 
-   ```bash
-   npm install
-   ```
+O **Aspen Core** é uma solução brasileira de segurança digital inspirada na YubiKey, tornando a autenticação mais acessível e eliminando a dependência de senhas. O celular funciona como um hardware de autenticação — basta aproximá-lo via NFC e confirmar com biometria para liberar o acesso a sites e aplicativos.
 
-2. Start the app
+### 🎯 Problema que resolve
+Empresas e usuários sofrem com o gerenciamento de senhas: são esquecidas, reutilizadas e vulneráveis a ataques de phishing. O Aspen Core elimina esse problema usando o celular como chave de acesso.
 
-   ```bash
-   npx expo start
-   ```
+### ✨ Funcionalidades
+- ✅ Cadastro e login com autenticação JWT
+- ✅ Recuperação de senha por e-mail com código
+- ✅ Dashboard com resumo de segurança
+- ✅ Gerenciamento de dispositivos conectados
+- ✅ Planos de assinatura (Básico, Padrão, Premium)
+- ✅ Perfil do usuário com abas (Dados, Segurança, Pagamento, Assinatura)
+- ✅ Notificações de eventos da conta
+- ✅ Configurações (Conta, Privacidade, Segurança, Preferências)
+- ✅ Tela de desbloqueio via NFC + biometria
+- ✅ APK Android disponível para instalação direta
 
-In the output, you'll find options to open the app in a
+---
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
+## 👥 Equipe
 
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
+| Nome | Função |
+|------|--------|
+| Rafael Alves de Souza Silva | Desenvolvedor Mobile & Backend |
+| Caio Lacerda | Integrante |
+| Igor Oliveira | Integrante |
+| Enzo Henrique | Integrante |
+| Paulo Souza | Integrante |
 
-## Get a fresh project
+---
 
-When you're ready, run:
+## 🛠️ Tecnologias Utilizadas
 
+### Mobile (App)
+- [React Native](https://reactnative.dev/) + [Expo](https://expo.dev/)
+- [Expo Router](https://expo.github.io/router/) — navegação por arquivos
+- [TypeScript](https://www.typescriptlang.org/)
+- [Axios](https://axios-http.com/) — requisições HTTP
+- [AsyncStorage](https://react-native-async-storage.github.io/async-storage/) — armazenamento local
+- [expo-local-authentication](https://docs.expo.dev/versions/latest/sdk/local-authentication/) — biometria
+- [react-native-nfc-manager](https://github.com/revtel/react-native-nfc-manager) — NFC
+- [EAS Build](https://docs.expo.dev/build/introduction/) — geração do APK
+
+### Backend (API)
+- [Node.js](https://nodejs.org/) + [Express](https://expressjs.com/)
+- [PostgreSQL](https://www.postgresql.org/) — banco de dados
+- [bcryptjs](https://github.com/dcodeIO/bcrypt.js) — criptografia de senhas
+- [jsonwebtoken](https://github.com/auth0/node-jsonwebtoken) — autenticação JWT
+- [Resend](https://resend.com/) — envio de e-mails
+- [Render](https://render.com/) — hospedagem da API e banco de dados
+
+---
+
+## 📁 Estrutura do Projeto
+aspen-m/                        ← Projeto Mobile (Expo)
+
+├── app/
+
+│   ├── (tabs)/
+
+│   │   ├── dashboard.tsx       ← Tela principal
+
+│   │   ├── dispositivos.tsx    ← Gerenciar dispositivos
+
+│   │   ├── planos.tsx          ← Planos de assinatura
+
+│   │   ├── profile.tsx         ← Perfil do usuário
+
+│   │   ├── notificacao.tsx     ← Notificações
+
+│   │   └── configuracoes.tsx   ← Configurações
+
+│   ├── login.tsx               ← Tela de login
+
+│   ├── register.tsx            ← Tela de cadastro
+
+│   ├── esqueci-senha.tsx       ← Recuperação de senha
+
+│   └── desbloqueio.tsx         ← Tela NFC + biometria
+
+├── components/
+
+│   └── Header.tsx              ← Componente de cabeçalho reutilizável
+
+├── services/
+
+│   └── api.ts                  ← Configuração do Axios
+
+├── assets/
+
+│   └── images/                 ← Ícones e imagens
+
+├── app.json                    ← Configuração do Expo
+
+└── eas.json                    ← Configuração do EAS Build
+aspen-api/                      ← Backend (Node.js)
+
+├── server.js                   ← API completa
+
+├── .env                        ← Variáveis de ambiente (não subir no Git)
+
+└── package.json
+
+---
+
+## 🚀 Como Rodar o Projeto
+
+### Pré-requisitos
+- [Node.js](https://nodejs.org/) instalado
+- [Git](https://git-scm.com/) instalado
+- Conta no [Expo](https://expo.dev/)
+- Aplicativo **Expo Go** no celular (para testar)
+
+---
+
+### 📲 Rodando o App Mobile
+
+**1. Clone o repositório:**
 ```bash
-npm run reset-project
+git clone https://github.com/RafaelAlvesdeSouzaSilva/aspen-m.git
+cd aspen-m
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+**2. Instale as dependências:**
+```bash
+npm install --legacy-peer-deps
+```
 
-## Learn more
+**3. Configure a API:**
 
-To learn more about developing your project with Expo, look at the following resources:
+Abra o arquivo `services/api.ts` e coloque a URL da API:
+```ts
+const BASE_URL = 'https://aspen-api-crqt.onrender.com';
+```
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+**4. Rode o projeto:**
+```bash
+npx expo start
+```
 
-## Join the community
+**5. Abra no celular:**
+- Instale o **Expo Go** no celular
+- Escaneie o QR Code que aparecer no terminal
 
-Join our community of developers creating universal apps.
+---
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+### ⚙️ Rodando o Backend Localmente
+
+**1. Clone o repositório do backend:**
+```bash
+git clone https://github.com/RafaelAlvesdeSouzaSilva/aspen-api.git
+cd aspen-api
+```
+
+**2. Instale as dependências:**
+```bash
+npm install
+```
+
+**3. Crie o arquivo `.env`:**
+```env
+DATABASE_URL=postgresql://usuario:senha@localhost:5432/aspencore
+JWT_SECRET=aspencore_secret_2024
+RESEND_API_KEY=sua_api_key_aqui
+PORT=3000
+NODE_ENV=development
+```
+
+**4. Crie o banco de dados:**
+
+Abra o MySQL Workbench ou psql e rode:
+```sql
+CREATE DATABASE aspencore;
+```
+
+As tabelas são criadas automaticamente quando o servidor inicia.
+
+**5. Rode o servidor:**
+```bash
+node server.js
+```
+
+O servidor estará disponível em `http://localhost:3000`
+
+---
+
+### 📦 Gerando o APK Android
+
+**1. Instale o EAS CLI:**
+```bash
+npm install -g eas-cli
+```
+
+**2. Faça login no Expo:**
+```bash
+eas login
+```
+
+**3. Gere o APK:**
+```bash
+eas build --platform android --profile preview
+```
+
+**4.** Aguarde o build (~15 minutos) e baixe o APK pelo link gerado.
+
+---
+
+## 🌐 API — Endpoints
+
+| Método | Rota | Descrição |
+|--------|------|-----------|
+| GET | `/` | Teste — verifica se a API está rodando |
+| POST | `/auth/cadastro` | Cadastrar novo usuário |
+| POST | `/auth/login` | Login do usuário |
+| GET | `/usuario/perfil` | Buscar perfil (autenticado) |
+| POST | `/auth/esqueci-senha` | Solicitar código de recuperação |
+| POST | `/auth/redefinir-senha` | Redefinir senha com código |
+
+### Exemplo de requisição — Login:
+```json
+POST /auth/login
+{
+  "email": "usuario@email.com",
+  "senha": "minhasenha123"
+}
+```
+
+### Resposta:
+```json
+{
+  "mensagem": "Login realizado com sucesso!",
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "usuario": {
+    "id": 1,
+    "nome": "Rafael Alves",
+    "email": "usuario@email.com",
+    "plano": "basico"
+  }
+}
+```
+
+---
+
+## 🔐 Como funciona o NFC + Biometria
+
+1. Usuário abre a tela de **Modo de Acesso NFC** no app
+2. Aproxima o celular de uma **tag NFC** ou dispositivo compatível
+3. O app detecta a tag e solicita **autenticação biométrica** (digital ou facial)
+4. Após confirmação, o acesso é **liberado automaticamente**
+5. Elimina completamente a necessidade de digitar senhas
+
+---
+
+## 🏗️ Arquitetura do Sistema
+
+┌─────────────────┐         ┌─────────────────┐         ┌─────────────────┐
+
+│                 │  HTTPS  │                 │   SQL   │                 │
+
+│   App Mobile    │ ──────► │   API Node.js   │ ──────► │   PostgreSQL    │
+
+│  (React Native) │         │   (Render)      │         │   (Render)      │
+
+│                 │         │                 │         │                 │
+
+└─────────────────┘         └─────────────────┘         └─────────────────┘
+
+│                           │
+
+│ NFC                       │ Resend
+
+▼                           ▼
+
+┌─────────────────┐         ┌─────────────────┐
+
+│   Tag/Hardware  │         │   E-mail do     │
+
+│      NFC        │         │    Usuário      │
+
+└─────────────────┘         └─────────────────┘
+---
+
+## 🌍 Deploy
+
+| Serviço | Plataforma | URL |
+|---------|------------|-----|
+| API Backend | Render | https://aspen-api-crqt.onrender.com |
+| Banco de dados | Render PostgreSQL | Interno |
+| Site institucional | Render | https://aspencore.onrender.com |
+| E-mail transacional | Resend | — |
+
+---
+
+## 📄 Licença
+
+Este projeto foi desenvolvido para fins acadêmicos como Trabalho de Conclusão de Curso.
+
+---
+
+<div align="center">
+  <p>Desenvolvido com 💚 pela equipe Aspen Core</p>
+  <p>Rafael Alves • Caio Lacerda • Igor Oliveira • Enzo Henrique • Paulo Souza</p>
+</div>
