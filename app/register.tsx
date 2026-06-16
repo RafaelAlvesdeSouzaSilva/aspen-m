@@ -48,10 +48,8 @@ export default function Register() {
     setCarregando(true);
     try {
       const { data } = await api.post("/auth/cadastro", { nome, email, senha });
-
       await AsyncStorage.setItem("token", data.token);
       await AsyncStorage.setItem("usuario", JSON.stringify(data.usuario));
-
       Alert.alert("Sucesso!", "Conta criada com sucesso!", [
         { text: "OK", onPress: () => router.replace("/(tabs)/dashboard") },
       ]);
@@ -153,16 +151,32 @@ export default function Register() {
             </TouchableOpacity>
           </View>
 
-          <TouchableOpacity style={styles.checkboxRow} onPress={() => setAceito(!aceito)}>
-            <View style={[styles.checkbox, aceito && styles.checkboxChecked]}>
+          {/* Checkbox com links clicáveis */}
+          <View style={styles.checkboxRow}>
+            <TouchableOpacity
+              style={[styles.checkbox, aceito && styles.checkboxChecked]}
+              onPress={() => setAceito(!aceito)}
+            >
               {aceito && <Ionicons name="checkmark" size={12} color="white" />}
-            </View>
+            </TouchableOpacity>
             <Text style={styles.checkText}>
               Li e concordo com os{" "}
-              <Text style={styles.linkDestaque}>Termos de uso</Text> e a{" "}
-              <Text style={styles.linkDestaque}>Política de privacidade</Text>.
+              <Text
+                style={styles.linkDestaque}
+                onPress={() => router.push("/termos-de-uso" as any)}
+              >
+                Termos de uso
+              </Text>
+              {" "}e a{" "}
+              <Text
+                style={styles.linkDestaque}
+                onPress={() => router.push("/politica-de-privacidade" as any)}
+              >
+                Política de privacidade
+              </Text>
+              .
             </Text>
-          </TouchableOpacity>
+          </View>
 
           <TouchableOpacity
             style={[styles.btnPrimary, (!aceito || carregando) && styles.btnDisabled]}
