@@ -12,9 +12,6 @@
       "distribution": "internal",
       "android": {
         "buildType": "apk"
-      },
-      "config": {
-        "npmrc": "legacy-peer-deps=true"
       }
     },
     "production": {
