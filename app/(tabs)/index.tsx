@@ -1,12 +1,13 @@
+import { Image } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import {
-    Dimensions,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
+  Dimensions,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from "react-native";
 
 const { height } = Dimensions.get("window");
@@ -21,7 +22,11 @@ export default function Home() {
         {/* Navbar */}
         <View style={styles.navbar}>
           <View style={styles.logoWrap}>
-            <Ionicons name="shield-checkmark-outline" size={22} color="white" />
+            <Image
+              source={require("../../assets/images/logo-icone.png")}
+              style={styles.logoIcone}
+              resizeMode="contain"
+            />
             <View>
               <Text style={styles.logoText}>ASPEN CORE</Text>
               <Text style={styles.logoSub}>SEGURANÇA DIGITAL</Text>
@@ -45,18 +50,18 @@ export default function Home() {
 
         {/* Hero content */}
         <View style={styles.heroContent}>
-          <View style={styles.shieldIcon}>
-            <Ionicons name="shield-checkmark-outline" size={48} color="white" />
-          </View>
+          <Image
+            source={require("../../assets/images/logo-completa.png")}
+            style={styles.logoCompleta}
+            resizeMode="contain"
+          />
           <Text style={styles.badge}>PROTEÇÃO REAL, SEM COMPLICAÇÃO</Text>
           <Text style={styles.heroTitle}>
             Segurança simples para quem precisa de{" "}
             <Text style={styles.heroItalic}>proteção real</Text>
           </Text>
           <Text style={styles.heroSub}>
-            O ASPEN CORE protege você contra phishing, reduz a dependência de
-            senhas e simplifica a autenticação — para pessoas e equipes de
-            qualquer tamanho.
+            Aproxime · Confie · Acesse
           </Text>
           <View style={styles.heroButtons}>
             <TouchableOpacity
@@ -223,11 +228,10 @@ export default function Home() {
 
       {/* Footer CTA */}
       <View style={styles.footerCta}>
-        <Ionicons
-          name="shield-checkmark-outline"
-          size={32}
-          color="white"
-          style={{ marginBottom: 12 }}
+        <Image
+          source={require("../../assets/images/logo-icone.png")}
+          style={styles.footerLogo}
+          resizeMode="contain"
         />
         <Text style={styles.footerTitle}>Pronto para se proteger?</Text>
         <Text style={styles.footerSub}>
@@ -244,12 +248,11 @@ export default function Home() {
   );
 }
 
-const TEAL = "#0b6b6b";
+const TEAL = "#1B6A6E";
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#f5f7f8" },
 
-  // Hero
   hero: { backgroundColor: TEAL, paddingBottom: 40 },
   navbar: {
     flexDirection: "row",
@@ -260,12 +263,8 @@ const styles = StyleSheet.create({
     paddingBottom: 16,
   },
   logoWrap: { flexDirection: "row", alignItems: "center", gap: 10 },
-  logoText: {
-    color: "white",
-    fontSize: 12,
-    fontWeight: "700",
-    letterSpacing: 0.8,
-  },
+  logoIcone: { width: 36, height: 36 },
+  logoText: { color: "white", fontSize: 12, fontWeight: "700", letterSpacing: 0.8 },
   logoSub: { color: "rgba(255,255,255,0.6)", fontSize: 9, letterSpacing: 0.5 },
   navButtons: { flexDirection: "row", gap: 8 },
   btnOutline: {
@@ -284,18 +283,8 @@ const styles = StyleSheet.create({
   },
   btnSolidText: { color: TEAL, fontSize: 13, fontWeight: "700" },
 
-  heroContent: { paddingHorizontal: 24, paddingTop: 24 },
-  shieldIcon: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    borderWidth: 2,
-    borderColor: "rgba(255,255,255,0.3)",
-    alignItems: "center",
-    justifyContent: "center",
-    alignSelf: "center",
-    marginBottom: 24,
-  },
+  heroContent: { paddingHorizontal: 24, paddingTop: 16, alignItems: "center" },
+  logoCompleta: { width: 200, height: 200, marginBottom: 16 },
   badge: {
     color: "rgba(255,255,255,0.8)",
     fontSize: 11,
@@ -360,84 +349,42 @@ const styles = StyleSheet.create({
   },
   socialText: { color: "rgba(255,255,255,0.85)", fontSize: 12 },
 
-  // Seções
   section: { padding: 24 },
   sectionTitle: {
-    fontSize: 22,
-    fontWeight: "700",
-    color: "#0f172a",
-    textAlign: "center",
-    marginBottom: 6,
+    fontSize: 22, fontWeight: "700", color: "#0f172a",
+    textAlign: "center", marginBottom: 6,
   },
   sectionSub: {
-    fontSize: 13,
-    color: "#64748b",
-    textAlign: "center",
-    marginBottom: 24,
+    fontSize: 13, color: "#64748b", textAlign: "center", marginBottom: 24,
   },
 
-  // Como funciona
   stepCard: {
-    flexDirection: "row",
-    gap: 16,
-    backgroundColor: "white",
-    borderRadius: 14,
-    padding: 18,
-    marginBottom: 12,
-    borderWidth: 0.5,
-    borderColor: "#e2e8f0",
+    flexDirection: "row", gap: 16, backgroundColor: "white",
+    borderRadius: 14, padding: 18, marginBottom: 12,
+    borderWidth: 0.5, borderColor: "#e2e8f0",
   },
   stepLeft: { alignItems: "center", gap: 8 },
   stepNum: { fontSize: 20, fontWeight: "700", color: "#e2e8f0" },
   stepIconWrap: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: "#e6f4f4",
-    alignItems: "center",
-    justifyContent: "center",
+    width: 44, height: 44, borderRadius: 22,
+    backgroundColor: "#e6f4f4", alignItems: "center", justifyContent: "center",
   },
   stepRight: { flex: 1 },
-  stepTitle: {
-    fontSize: 15,
-    fontWeight: "700",
-    color: "#0f172a",
-    marginBottom: 6,
-  },
+  stepTitle: { fontSize: 15, fontWeight: "700", color: "#0f172a", marginBottom: 6 },
   stepDesc: { fontSize: 13, color: "#64748b", lineHeight: 20 },
 
-  // Planos
   planCard: {
-    backgroundColor: "white",
-    borderRadius: 14,
-    padding: 20,
-    marginBottom: 14,
-    borderWidth: 0.5,
-    borderColor: "#e2e8f0",
+    backgroundColor: "white", borderRadius: 14, padding: 20,
+    marginBottom: 14, borderWidth: 0.5, borderColor: "#e2e8f0",
   },
   planDestaque: { borderWidth: 2, borderColor: TEAL },
   planBadge: {
-    backgroundColor: TEAL,
-    borderRadius: 20,
-    alignSelf: "flex-start",
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-    marginBottom: 10,
+    backgroundColor: TEAL, borderRadius: 20, alignSelf: "flex-start",
+    paddingHorizontal: 12, paddingVertical: 4, marginBottom: 10,
   },
   planBadgeText: { color: "white", fontSize: 11, fontWeight: "700" },
-  planTag: {
-    fontSize: 11,
-    fontWeight: "700",
-    color: "#94a3b8",
-    letterSpacing: 1,
-    marginBottom: 6,
-  },
-  planPriceRow: {
-    flexDirection: "row",
-    alignItems: "baseline",
-    gap: 2,
-    marginBottom: 6,
-  },
+  planTag: { fontSize: 11, fontWeight: "700", color: "#94a3b8", letterSpacing: 1, marginBottom: 6 },
+  planPriceRow: { flexDirection: "row", alignItems: "baseline", gap: 2, marginBottom: 6 },
   planPrice: { fontSize: 32, fontWeight: "700", color: "#0f172a" },
   planPer: { fontSize: 13, color: "#64748b" },
   planDesc: { fontSize: 13, color: "#64748b", marginBottom: 16 },
@@ -445,40 +392,26 @@ const styles = StyleSheet.create({
   planFeatureRow: { flexDirection: "row", alignItems: "center", gap: 8 },
   planFeatureText: { fontSize: 13, color: "#475569" },
   planBtn: {
-    borderWidth: 1.5,
-    borderColor: TEAL,
-    borderRadius: 10,
-    paddingVertical: 12,
-    alignItems: "center",
+    borderWidth: 1.5, borderColor: TEAL, borderRadius: 10,
+    paddingVertical: 12, alignItems: "center",
   },
   planBtnDestaque: { backgroundColor: TEAL },
   planBtnText: { color: TEAL, fontWeight: "700", fontSize: 14 },
   planBtnTextDestaque: { color: "white" },
 
-  // Footer CTA
-  footerCta: {
-    backgroundColor: TEAL,
-    padding: 32,
-    alignItems: "center",
-  },
+  footerCta: { backgroundColor: TEAL, padding: 32, alignItems: "center" },
+  footerLogo: { width: 60, height: 60, marginBottom: 16 },
   footerTitle: {
-    color: "white",
-    fontSize: 22,
-    fontWeight: "700",
-    marginBottom: 8,
-    textAlign: "center",
+    color: "white", fontSize: 22, fontWeight: "700",
+    marginBottom: 8, textAlign: "center",
   },
   footerSub: {
-    color: "rgba(255,255,255,0.8)",
-    fontSize: 14,
-    textAlign: "center",
-    marginBottom: 24,
+    color: "rgba(255,255,255,0.8)", fontSize: 14,
+    textAlign: "center", marginBottom: 24,
   },
   btnFooter: {
-    backgroundColor: "white",
-    borderRadius: 10,
-    paddingHorizontal: 28,
-    paddingVertical: 14,
+    backgroundColor: "white", borderRadius: 10,
+    paddingHorizontal: 28, paddingVertical: 14,
   },
   btnFooterText: { color: TEAL, fontWeight: "700", fontSize: 15 },
 });
