@@ -10,11 +10,26 @@ import {
   Platform,
   Alert,
   ActivityIndicator,
+  Image,
 } from "react-native";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import { createUserWithEmailAndPassword, updateProfile } from "firebase/auth";
+import { auth } from "@/services/firebase";
 import api from "@/services/api";
+
+function traduzirErroFirebase(codigo: string) {
+  switch (codigo) {
+    case "auth/email-already-in-use":
+      return "E-mail já cadastrado.";
+    case "auth/invalid-email":
+      return "E-mail inválido.";
+    case "auth/weak-password":
+      return "Senha muito fraca. Use pelo menos 6 caracteres.";
+    default:
+      return "Erro ao conectar com o servidor.";
+  }
+}
 
 export default function Register() {
   const router = useRouter();
@@ -47,14 +62,17 @@ export default function Register() {
 
     setCarregando(true);
     try {
-      const { data } = await api.post("/auth/cadastro", { nome, email, senha });
-      await AsyncStorage.setItem("token", data.token);
-      await AsyncStorage.setItem("usuario", JSON.stringify(data.usuario));
+      const credential = await createUserWithEmailAndPassword(auth, email, senha);
+      await updateProfile(credential.user, { displayName: nome });
+
+      // Cria o documento de perfil no Firestore via API backend
+      await api.post("/auth/sync-profile", { name: nome });
+
       Alert.alert("Sucesso!", "Conta criada com sucesso!", [
         { text: "OK", onPress: () => router.replace("/(tabs)/dashboard") },
       ]);
     } catch (err: any) {
-      const msg = err.response?.data?.erro || "Erro ao conectar com o servidor.";
+      const msg = traduzirErroFirebase(err.code);
       Alert.alert("Erro", msg);
     } finally {
       setCarregando(false);
@@ -68,9 +86,11 @@ export default function Register() {
     >
       <ScrollView style={styles.container} bounces={false}>
         <View style={styles.header}>
-          <View style={styles.shieldCircle}>
-            <Ionicons name="shield-checkmark-outline" size={28} color="white" />
-          </View>
+          <Image
+            source={require("@/assets/images/logo-icone.png")}
+            style={styles.logoIcon}
+            resizeMode="contain"
+          />
           <Text style={styles.brand}>ASPEN CORE</Text>
           <Text style={styles.brandSub}>SEGURANÇA DIGITAL</Text>
           <Text style={styles.tagline}>Comece a se proteger hoje.{"\n"}É grátis.</Text>
@@ -151,7 +171,6 @@ export default function Register() {
             </TouchableOpacity>
           </View>
 
-          {/* Checkbox com links clicáveis */}
           <View style={styles.checkboxRow}>
             <TouchableOpacity
               style={[styles.checkbox, aceito && styles.checkboxChecked]}
@@ -208,10 +227,10 @@ const styles = StyleSheet.create({
   header: {
     backgroundColor: TEAL, paddingTop: 60, paddingBottom: 32, paddingHorizontal: 24,
   },
-  shieldCircle: {
-    width: 48, height: 48, borderRadius: 24,
-    borderWidth: 2, borderColor: "rgba(255,255,255,0.45)",
-    alignItems: "center", justifyContent: "center", marginBottom: 14,
+  logoIcon: {
+    width: 64,
+    height: 64,
+    marginBottom: 14,
   },
   brand: { color: "white", fontSize: 13, fontWeight: "700", letterSpacing: 1 },
   brandSub: { color: "rgba(255,255,255,0.7)", fontSize: 10, letterSpacing: 0.5, marginBottom: 10 },

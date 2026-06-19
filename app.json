@@ -16,22 +16,22 @@
         "NSFaceIDUsageDescription": "Usado para confirmar sua identidade antes de liberar o acesso"
       }
     },
-  "android": {
-    "adaptiveIcon": {
-    "foregroundImage": "./assets/images/android-icon-foreground.png",
-    "backgroundImage": "./assets/images/android-icon-background.png",
-    "monochromeImage": "./assets/images/android-icon-monochrome.png"
-  },
-   "package": "com.aspencore.app",
-    "permissions": [
-    "android.permission.NFC",
-    "android.permission.USE_BIOMETRIC",
-    "android.permission.USE_FINGERPRINT"
-  ],
-    "gradleProperties": {
-    "newArchEnabled": false
-  }
-},
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/images/android-icon-foreground.png",
+        "backgroundImage": "./assets/images/android-icon-background.png",
+        "monochromeImage": "./assets/images/android-icon-monochrome.png"
+      },
+      "package": "com.aspencore.app",
+      "permissions": [
+        "android.permission.NFC",
+        "android.permission.USE_BIOMETRIC",
+        "android.permission.USE_FINGERPRINT"
+      ],
+      "gradleProperties": {
+        "newArchEnabled": false
+      }
+    },
     "web": {
       "bundler": "metro",
       "output": "static",
@@ -51,9 +51,9 @@
         "expo-splash-screen",
         {
           "image": "./assets/images/splash-icon.png",
-          "imageWidth": 200,
-          "resizeMode": "contain",
-          "backgroundColor": "#ffffff"
+          "imageWidth": 250,
+          "resizeMode": "cover",
+          "backgroundColor": "#1B6A6E"
         }
       ]
     ],

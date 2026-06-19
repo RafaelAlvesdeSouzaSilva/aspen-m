@@ -1,11 +1,12 @@
-import api from "@/services/api";
 import { Ionicons } from "@expo/vector-icons";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useRouter } from "expo-router";
 import { useState } from "react";
+import { signInWithEmailAndPassword } from "firebase/auth";
+import { auth } from "@/services/firebase";
 import {
   ActivityIndicator,
   Alert,
+  Image,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -15,6 +16,21 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+
+function traduzirErroFirebase(codigo: string) {
+  switch (codigo) {
+    case "auth/invalid-email":
+      return "E-mail inválido.";
+    case "auth/user-not-found":
+    case "auth/wrong-password":
+    case "auth/invalid-credential":
+      return "E-mail ou senha incorretos.";
+    case "auth/too-many-requests":
+      return "Muitas tentativas. Tente novamente mais tarde.";
+    default:
+      return "Erro ao conectar com o servidor.";
+  }
+}
 
 export default function Login() {
   const router = useRouter();
@@ -31,16 +47,10 @@ export default function Login() {
 
     setCarregando(true);
     try {
-      const { data } = await api.post("/auth/login", { email, senha });
-
-      // Salva token e dados do usuário
-      await AsyncStorage.setItem("token", data.token);
-      await AsyncStorage.setItem("usuario", JSON.stringify(data.usuario));
-
+      await signInWithEmailAndPassword(auth, email, senha);
       router.replace("/(tabs)/dashboard");
     } catch (err: any) {
-      const msg =
-        err.response?.data?.erro || "Erro ao conectar com o servidor.";
+      const msg = traduzirErroFirebase(err.code);
       Alert.alert("Erro", msg);
     } finally {
       setCarregando(false);
@@ -54,9 +64,11 @@ export default function Login() {
     >
       <ScrollView style={styles.container} bounces={false}>
         <View style={styles.header}>
-          <View style={styles.shieldCircle}>
-            <Ionicons name="shield-checkmark-outline" size={28} color="white" />
-          </View>
+          <Image
+            source={require("@/assets/images/logo-icone.png")}
+            style={styles.logoIcon}
+            resizeMode="contain"
+          />
           <Text style={styles.brand}>ASPEN CORE</Text>
           <Text style={styles.brandSub}>SEGURANÇA DIGITAL</Text>
           <Text style={styles.tagline}>
@@ -173,14 +185,9 @@ const styles = StyleSheet.create({
     paddingBottom: 32,
     paddingHorizontal: 24,
   },
-  shieldCircle: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    borderWidth: 2,
-    borderColor: "rgba(255,255,255,0.45)",
-    alignItems: "center",
-    justifyContent: "center",
+  logoIcon: {
+    width: 64,
+    height: 64,
     marginBottom: 14,
   },
   brand: { color: "white", fontSize: 13, fontWeight: "700", letterSpacing: 1 },

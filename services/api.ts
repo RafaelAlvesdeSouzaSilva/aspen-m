@@ -1,5 +1,5 @@
 import axios from 'axios';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { auth } from './firebase';
 
 const BASE_URL = 'https://aspen-api-crqt.onrender.com';
 
@@ -9,8 +9,13 @@ const api = axios.create({
 });
 
 api.interceptors.request.use(async (config) => {
-  const token = await AsyncStorage.getItem('token');
-  if (token) config.headers.Authorization = `Bearer ${token}`;
+  const user = auth.currentUser;
+  if (user) {
+    // getIdToken() renova automaticamente o token quando necessário —
+    // por isso buscamos na hora da requisição, nunca em cache.
+    const token = await user.getIdToken();
+    config.headers.Authorization = `Bearer ${token}`;
+  }
   return config;
 });
 

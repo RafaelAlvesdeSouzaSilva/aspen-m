@@ -13,57 +13,42 @@ import {
 } from "react-native";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import api from "@/services/api";
+import { sendPasswordResetEmail } from "firebase/auth";
+import { auth } from "@/services/firebase";
 
 const TEAL = "#0b6b6b";
 
-type Etapa = "email" | "codigo" | "nova_senha";
+function traduzirErroFirebase(codigo: string) {
+  switch (codigo) {
+    case "auth/invalid-email":
+      return "E-mail inválido.";
+    case "auth/too-many-requests":
+      return "Muitas tentativas. Tente novamente mais tarde.";
+    default:
+      return "Erro ao enviar e-mail.";
+  }
+}
 
 export default function EsqueciSenha() {
   const router = useRouter();
-  const [etapa, setEtapa] = useState<Etapa>("email");
   const [email, setEmail] = useState("");
-  const [codigo, setCodigo] = useState("");
-  const [novaSenha, setNovaSenha] = useState("");
-  const [confirmarSenha, setConfirmarSenha] = useState("");
-  const [mostrarSenha, setMostrarSenha] = useState(false);
+  const [enviado, setEnviado] = useState(false);
   const [carregando, setCarregando] = useState(false);
 
   const handleEnviarEmail = async () => {
     if (!email) return Alert.alert("Atenção", "Informe seu e-mail.");
     setCarregando(true);
     try {
-      await api.post("/auth/esqueci-senha", { email });
-      Alert.alert("E-mail enviado!", "Verifique sua caixa de entrada e spam.");
-      setEtapa("codigo");
+      await sendPasswordResetEmail(auth, email);
+      setEnviado(true);
     } catch (err: any) {
-      Alert.alert("Erro", err.response?.data?.erro || "Erro ao enviar e-mail.");
-    } finally {
-      setCarregando(false);
-    }
-  };
-
-  const handleVerificarCodigo = () => {
-    if (codigo.length !== 6) return Alert.alert("Atenção", "Digite o código de 6 dígitos.");
-    setEtapa("nova_senha");
-  };
-
-  const handleRedefinirSenha = async () => {
-    if (!novaSenha || !confirmarSenha)
-      return Alert.alert("Atenção", "Preencha os campos de senha.");
-    if (novaSenha.length < 8)
-      return Alert.alert("Atenção", "A senha deve ter pelo menos 8 caracteres.");
-    if (novaSenha !== confirmarSenha)
-      return Alert.alert("Atenção", "As senhas não coincidem.");
-
-    setCarregando(true);
-    try {
-      await api.post("/auth/redefinir-senha", { email, codigo, novaSenha });
-      Alert.alert("Sucesso!", "Senha redefinida com sucesso!", [
-        { text: "Entrar", onPress: () => router.replace("/login") },
-      ]);
-    } catch (err: any) {
-      Alert.alert("Erro", err.response?.data?.erro || "Código inválido ou expirado.");
+      // Por segurança, não revelamos se o e-mail existe ou não.
+      // O Firebase já trata isso, mas mantemos a mensagem genérica em erros de rede.
+      if (err.code === "auth/invalid-email") {
+        Alert.alert("Erro", traduzirErroFirebase(err.code));
+      } else {
+        setEnviado(true);
+      }
     } finally {
       setCarregando(false);
     }
@@ -85,37 +70,14 @@ export default function EsqueciSenha() {
           </View>
           <Text style={styles.brand}>ASPEN CORE</Text>
           <Text style={styles.tagline}>Recuperação de senha</Text>
-
-          {/* Indicador de etapas */}
-          <View style={styles.etapasRow}>
-            {["email", "codigo", "nova_senha"].map((e, i) => (
-              <View key={e} style={styles.etapaWrap}>
-                <View style={[
-                  styles.etapaBola,
-                  (etapa === e ||
-                    (i === 0 && ["codigo", "nova_senha"].includes(etapa)) ||
-                    (i === 1 && etapa === "nova_senha"))
-                    && styles.etapaBolaAtiva
-                ]}>
-                  <Text style={styles.etapaNum}>{i + 1}</Text>
-                </View>
-                {i < 2 && <View style={[styles.etapaLinha,
-                  ((i === 0 && ["codigo", "nova_senha"].includes(etapa)) ||
-                    (i === 1 && etapa === "nova_senha"))
-                    && styles.etapaLinhaAtiva
-                ]} />}
-              </View>
-            ))}
-          </View>
         </View>
 
         <View style={styles.form}>
-          {/* Etapa 1 — E-mail */}
-          {etapa === "email" && (
+          {!enviado ? (
             <>
               <Text style={styles.formTitle}>Esqueceu sua senha?</Text>
               <Text style={styles.formSub}>
-                Informe seu e-mail e enviaremos um código de recuperação.
+                Informe seu e-mail e enviaremos um link para você redefinir sua senha.
               </Text>
               <Text style={styles.label}>E-mail *</Text>
               <View style={styles.inputWrap}>
@@ -138,88 +100,25 @@ export default function EsqueciSenha() {
                 {carregando ? (
                   <ActivityIndicator color="white" />
                 ) : (
-                  <Text style={styles.btnPrimaryText}>Enviar código</Text>
+                  <Text style={styles.btnPrimaryText}>Enviar link de recuperação</Text>
                 )}
               </TouchableOpacity>
             </>
-          )}
-
-          {/* Etapa 2 — Código */}
-          {etapa === "codigo" && (
+          ) : (
             <>
-              <Text style={styles.formTitle}>Digite o código</Text>
+              <View style={styles.successIcon}>
+                <Ionicons name="checkmark-circle" size={48} color={TEAL} />
+              </View>
+              <Text style={styles.formTitle}>E-mail enviado!</Text>
               <Text style={styles.formSub}>
-                Enviamos um código de 6 dígitos para{" "}
-                <Text style={{ fontWeight: "700", color: TEAL }}>{email}</Text>
+                Se este e-mail estiver cadastrado, você receberá um link para
+                redefinir sua senha em poucos minutos. Verifique também a
+                caixa de spam.
               </Text>
-              <Text style={styles.label}>Código *</Text>
-              <View style={styles.inputWrap}>
-                <Ionicons name="key-outline" size={16} color="#94A3B8" style={styles.inputIcon} />
-                <TextInput
-                  style={[styles.input, { letterSpacing: 6, fontSize: 18, fontWeight: "700" }]}
-                  placeholder="000000"
-                  placeholderTextColor="#94A3B8"
-                  keyboardType="default"
-                  autoCapitalize="characters"
-                  maxLength={6}
-                  value={codigo}
-                  onChangeText={setCodigo}
-                />
-              </View>
-              <TouchableOpacity style={styles.btnPrimary} onPress={handleVerificarCodigo}>
-                <Text style={styles.btnPrimaryText}>Verificar código</Text>
-              </TouchableOpacity>
-              <TouchableOpacity onPress={() => setEtapa("email")}>
-                <Text style={styles.linkCenter}>Não recebeu? <Text style={styles.linkDestaque}>Reenviar</Text></Text>
-              </TouchableOpacity>
-            </>
-          )}
-
-          {/* Etapa 3 — Nova senha */}
-          {etapa === "nova_senha" && (
-            <>
-              <Text style={styles.formTitle}>Nova senha</Text>
-              <Text style={styles.formSub}>Crie uma senha forte para sua conta.</Text>
-
-              <Text style={styles.label}>Nova senha *</Text>
-              <View style={styles.inputWrap}>
-                <Ionicons name="lock-closed-outline" size={16} color="#94A3B8" style={styles.inputIcon} />
-                <TextInput
-                  style={[styles.input, { flex: 1 }]}
-                  placeholder="Mínimo 8 caracteres"
-                  placeholderTextColor="#94A3B8"
-                  secureTextEntry={!mostrarSenha}
-                  value={novaSenha}
-                  onChangeText={setNovaSenha}
-                />
-                <TouchableOpacity onPress={() => setMostrarSenha(!mostrarSenha)}>
-                  <Ionicons name={mostrarSenha ? "eye-off-outline" : "eye-outline"} size={16} color="#94A3B8" />
-                </TouchableOpacity>
-              </View>
-
-              <Text style={styles.label}>Confirmar nova senha *</Text>
-              <View style={styles.inputWrap}>
-                <Ionicons name="lock-closed-outline" size={16} color="#94A3B8" style={styles.inputIcon} />
-                <TextInput
-                  style={[styles.input, { flex: 1 }]}
-                  placeholder="Repita a senha"
-                  placeholderTextColor="#94A3B8"
-                  secureTextEntry={!mostrarSenha}
-                  value={confirmarSenha}
-                  onChangeText={setConfirmarSenha}
-                />
-              </View>
-
-              <TouchableOpacity
-                style={[styles.btnPrimary, carregando && styles.btnDisabled]}
-                onPress={handleRedefinirSenha}
-                disabled={carregando}
-              >
-                {carregando ? (
-                  <ActivityIndicator color="white" />
-                ) : (
-                  <Text style={styles.btnPrimaryText}>Redefinir senha</Text>
-                )}
+              <TouchableOpacity onPress={() => setEnviado(false)}>
+                <Text style={styles.linkCenter}>
+                  Não recebeu? <Text style={styles.linkDestaque}>Tentar de novo</Text>
+                </Text>
               </TouchableOpacity>
             </>
           )}
@@ -248,26 +147,15 @@ const styles = StyleSheet.create({
     alignItems: "center", justifyContent: "center", marginBottom: 14,
   },
   brand: { color: "white", fontSize: 13, fontWeight: "700", letterSpacing: 1, marginBottom: 4 },
-  tagline: { color: "rgba(255,255,255,0.85)", fontSize: 16, fontWeight: "500", marginBottom: 24 },
-
-  etapasRow: { flexDirection: "row", alignItems: "center" },
-  etapaWrap: { flexDirection: "row", alignItems: "center" },
-  etapaBola: {
-    width: 28, height: 28, borderRadius: 14,
-    backgroundColor: "rgba(255,255,255,0.25)",
-    alignItems: "center", justifyContent: "center",
-  },
-  etapaBolaAtiva: { backgroundColor: "white" },
-  etapaNum: { fontSize: 12, fontWeight: "700", color: TEAL },
-  etapaLinha: { width: 40, height: 2, backgroundColor: "rgba(255,255,255,0.25)", marginHorizontal: 4 },
-  etapaLinhaAtiva: { backgroundColor: "white" },
+  tagline: { color: "rgba(255,255,255,0.85)", fontSize: 16, fontWeight: "500", marginBottom: 8 },
 
   form: {
     backgroundColor: "white", margin: 16, borderRadius: 16, padding: 24,
     shadowColor: "#000", shadowOpacity: 0.06, shadowRadius: 8, elevation: 2, marginBottom: 32,
   },
-  formTitle: { fontSize: 20, fontWeight: "700", color: "#0f172a", marginBottom: 4 },
-  formSub: { fontSize: 13, color: "#64748b", marginBottom: 20, lineHeight: 20 },
+  successIcon: { alignItems: "center", marginBottom: 8 },
+  formTitle: { fontSize: 20, fontWeight: "700", color: "#0f172a", marginBottom: 4, textAlign: "center" },
+  formSub: { fontSize: 13, color: "#64748b", marginBottom: 20, lineHeight: 20, textAlign: "center" },
   label: { fontSize: 12, color: "#475569", marginBottom: 6, fontWeight: "500" },
   inputWrap: {
     flexDirection: "row", alignItems: "center",
