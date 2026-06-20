@@ -72,6 +72,17 @@ export default function Register() {
         { text: "OK", onPress: () => router.replace("/(tabs)/dashboard") },
       ]);
     } catch (err: any) {
+      if (err.code === "auth/email-already-in-use") {
+        Alert.alert(
+          "E-mail já cadastrado",
+          "Já existe uma conta com este e-mail. Que tal fazer login?",
+          [
+            { text: "Cancelar", style: "cancel" },
+            { text: "Ir para login", onPress: () => router.replace("/login") },
+          ]
+        );
+        return;
+      }
       const msg = traduzirErroFirebase(err.code);
       Alert.alert("Erro", msg);
     } finally {

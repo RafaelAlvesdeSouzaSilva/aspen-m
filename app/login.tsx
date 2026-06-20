@@ -1,8 +1,8 @@
+import { auth } from "@/services/firebase";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import { useState } from "react";
 import { signInWithEmailAndPassword } from "firebase/auth";
-import { auth } from "@/services/firebase";
+import { useState } from "react";
 import {
   ActivityIndicator,
   Alert,
