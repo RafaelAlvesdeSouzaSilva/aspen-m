@@ -65,8 +65,17 @@ export default function Register() {
       const credential = await createUserWithEmailAndPassword(auth, email, senha);
       await updateProfile(credential.user, { displayName: nome });
 
-      // Cria o documento de perfil no Firestore via API backend
-      await api.post("/auth/sync-profile", { name: nome });
+// Pega o token direto do credential, sem depender do auth.currentUser
+      const token = await credential.user.getIdToken();
+console.log("TOKEN:", token ? "ok" : "vazio");
+try {
+  const res = await api.post("/auth/sync-profile", { name: nome }, {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+  console.log("SYNC-PROFILE RESPOSTA:", JSON.stringify(res.data));
+} catch (syncErr: any) {
+  console.log("SYNC-PROFILE ERRO:", syncErr?.response?.data, syncErr?.message);
+}
 
       Alert.alert("Sucesso!", "Conta criada com sucesso!", [
         { text: "OK", onPress: () => router.replace("/(tabs)/dashboard") },
