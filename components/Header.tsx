@@ -1,8 +1,7 @@
-import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import { View, Text, StyleSheet, TouchableOpacity } from "react-native";
-
-const TEAL = "#0b6b6b";
+import { View, Text, StyleSheet, TouchableOpacity, Image } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
+import { useI18n } from "@/contexts/i18n";
 
 interface Props {
   titulo: string;
@@ -13,21 +12,26 @@ interface Props {
 
 export default function Header({ titulo, subtitulo, mostrarVoltar = true, direita }: Props) {
   const router = useRouter();
+  const { colors, theme } = useI18n();
+
+  const logo = theme === "dark"
+    ? require("@/assets/images/logo-icone.png")
+    : require("@/assets/images/logo-alt.png");
 
   return (
-    <View style={styles.header}>
+    <View style={[styles.header, { backgroundColor: colors.headerBg, borderBottomColor: colors.border }]}>
       <View style={styles.topRow}>
         {mostrarVoltar ? (
-          <TouchableOpacity style={styles.btnVoltar} onPress={() => router.back()}>
-            <Ionicons name="arrow-back-outline" size={20} color="#475569" />
+          <TouchableOpacity style={[styles.btnVoltar, { backgroundColor: colors.inputBg }]} onPress={() => router.back()}>
+            <Ionicons name="arrow-back-outline" size={20} color={colors.textSec} />
           </TouchableOpacity>
         ) : (
           <View style={styles.btnVoltar} />
         )}
 
         <View style={styles.logoWrap}>
-          <Ionicons name="shield-checkmark-outline" size={16} color={TEAL} />
-          <Text style={styles.logoText}>ASPEN CORE</Text>
+          <Image source={logo} style={styles.logoImg} resizeMode="contain" />
+          <Text style={[styles.logoText, { color: colors.text }]}>ASPEN CORE</Text>
         </View>
 
         <View style={{ width: 36 }}>
@@ -35,20 +39,18 @@ export default function Header({ titulo, subtitulo, mostrarVoltar = true, direit
         </View>
       </View>
 
-      <Text style={styles.titulo}>{titulo}</Text>
-      {subtitulo && <Text style={styles.subtitulo}>{subtitulo}</Text>}
+      <Text style={[styles.titulo, { color: colors.text }]}>{titulo}</Text>
+      {subtitulo && <Text style={[styles.subtitulo, { color: colors.textSec }]}>{subtitulo}</Text>}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   header: {
-    backgroundColor: "white",
     paddingTop: 56,
     paddingHorizontal: 20,
     paddingBottom: 20,
     borderBottomWidth: 0.5,
-    borderBottomColor: "#e2e8f0",
   },
   topRow: {
     flexDirection: "row",
@@ -57,15 +59,12 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   btnVoltar: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: "#f1f5f9",
-    alignItems: "center",
-    justifyContent: "center",
+    width: 36, height: 36, borderRadius: 18,
+    alignItems: "center", justifyContent: "center",
   },
   logoWrap: { flexDirection: "row", alignItems: "center", gap: 6 },
-  logoText: { fontSize: 11, fontWeight: "700", color: TEAL, letterSpacing: 0.8 },
-  titulo: { fontSize: 28, fontWeight: "700", color: "#0f172a", marginBottom: 4 },
-  subtitulo: { fontSize: 13, color: "#64748b" },
+  logoImg: { width: 20, height: 20 },
+  logoText: { fontSize: 11, fontWeight: "700", letterSpacing: 0.8 },
+  titulo: { fontSize: 28, fontWeight: "700", marginBottom: 4 },
+  subtitulo: { fontSize: 13 },
 });

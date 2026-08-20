@@ -229,7 +229,7 @@ export default function Home() {
       {/* Footer CTA */}
       <View style={styles.footerCta}>
         <Image
-          source={require("../../assets/images/logo-icone.png")}
+          source={require("../../assets/images/logo-alt.png")}
           style={styles.footerLogo}
           resizeMode="contain"
         />

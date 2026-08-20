@@ -3,405 +3,484 @@ import { signOut } from "firebase/auth";
 import { useRouter } from "expo-router";
 import { useEffect, useState } from "react";
 import {
-  ActivityIndicator,
-  Alert,
-  Linking,
-  ScrollView,
-  StyleSheet,
-  Switch,
-  Text,
-  TouchableOpacity,
-  View,
+  ActivityIndicator, Alert, Image, Linking, Modal, Pressable,
+  ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View,
 } from "react-native";
 import { auth } from "@/services/firebase";
 import api from "@/services/api";
+import { useI18n, LOCALE_LABELS, type Locale, type Theme } from "@/contexts/i18n";
+import * as LocalAuthentication from "expo-local-authentication";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const TEAL = "#0b6b6b";
+const LOGO_ESCURA = require("@/assets/images/logo-alt.png");
+const LOGO_CLARA = require("@/assets/images/logo-icone.png");
 
-type Usuario = {
-  name: string;
-  email: string;
-  plan: string;
-};
+type Usuario = { name: string; email: string; plan: string };
 
-const SECOES = ["Conta", "Privacidade", "Segurança", "Preferências", "Sobre"] as const;
-type Secao = typeof SECOES[number];
-
-function planLabel(plan: string) {
-  const map: Record<string, string> = { basico: "Básico", padrao: "Padrão", premium: "Premium" };
-  return map[plan] ?? plan;
+function Divisor({ color }: { color: string }) {
+  return <View style={[styles.divider, { backgroundColor: color }]} />;
 }
 
-// ============================================================
-// Sub-componente: item de configuração com switch
-// ============================================================
-function ItemToggle({ titulo, descricao, value, onValueChange }: {
-  titulo: string; descricao?: string; value: boolean; onValueChange: (v: boolean) => void;
+function ItemToggle({ titulo, descricao, value, onValueChange, colors }: {
+  titulo: string; descricao?: string; value: boolean;
+  onValueChange: (v: boolean) => void; colors: any;
 }) {
   return (
-    <View style={styles.configRow}>
+    <View style={styles.itemRow}>
       <View style={{ flex: 1 }}>
-        <Text style={styles.configTitulo}>{titulo}</Text>
-        {!!descricao && <Text style={styles.configDesc}>{descricao}</Text>}
+        <Text style={[styles.itemTitulo, { color: colors.text }]}>{titulo}</Text>
+        {!!descricao && <Text style={[styles.itemDesc, { color: colors.textMuted }]}>{descricao}</Text>}
       </View>
-      <Switch
-        value={value}
-        onValueChange={onValueChange}
-        trackColor={{ false: "#e2e8f0", true: TEAL }}
-        thumbColor="white"
-      />
+      <Switch value={value} onValueChange={onValueChange} trackColor={{ false: "#e2e8f0", true: TEAL }} thumbColor="white" />
     </View>
   );
 }
 
-// Sub-componente: item de configuração com ação
-function ItemAcao({ titulo, descricao, onPress, cor, icone, disabled }: {
+function ItemAcao({ titulo, descricao, onPress, cor, icone, colors }: {
   titulo: string; descricao?: string; onPress: () => void;
-  cor?: string; icone?: string; disabled?: boolean;
+  cor?: string; icone?: string; colors: any;
 }) {
   return (
-    <TouchableOpacity style={styles.configRow} onPress={onPress} disabled={disabled}>
+    <TouchableOpacity style={styles.itemRow} onPress={onPress}>
       <View style={{ flex: 1 }}>
-        <Text style={[styles.configTitulo, cor ? { color: cor } : {}]}>{titulo}</Text>
-        {!!descricao && <Text style={styles.configDesc}>{descricao}</Text>}
+        <Text style={[styles.itemTitulo, { color: cor ?? colors.text }]}>{titulo}</Text>
+        {!!descricao && <Text style={[styles.itemDesc, { color: colors.textMuted }]}>{descricao}</Text>}
       </View>
-      <Ionicons name={(icone ?? "chevron-forward") as any} size={16} color={cor ?? "#cbd5e1"} />
+      <Ionicons name={(icone ?? "chevron-forward") as any} size={16} color={cor ?? colors.textMuted} />
     </TouchableOpacity>
   );
 }
 
-function Divisor() {
-  return <View style={styles.divider} />;
-}
+const SECOES_KEYS = ["account", "privacy", "security", "preferences", "about"] as const;
+type SecaoKey = typeof SECOES_KEYS[number];
 
-// ============================================================
-// Main
-// ============================================================
 export default function Configuracoes() {
   const router = useRouter();
-  const [secaoAtiva, setSecaoAtiva] = useState<Secao>("Conta");
+  const { t, colors, locale, setLocale, theme, setTheme, photoUri } = useI18n();
+  const logo = theme === "dark" ? LOGO_CLARA : LOGO_ESCURA;
+  const [secaoAtiva, setSecaoAtiva] = useState<SecaoKey>("account");
   const [usuario, setUsuario] = useState<Usuario | null>(null);
   const [carregando, setCarregando] = useState(true);
+  const [saindo, setSaindo] = useState(false);
+  const [modalIdioma, setModalIdioma] = useState(false);
+  const [modalTema, setModalTema] = useState(false);
 
-  // Toggles
   const [notifPush, setNotifPush] = useState(true);
   const [notifEmail, setNotifEmail] = useState(true);
   const [compartilharDados, setCompartilharDados] = useState(true);
   const [cookies, setCookies] = useState(false);
-  const [autenticacaoBio, setAutenticacaoBio] = useState(true);
-  const [alertasLogin, setAlertasLogin] = useState(true);
-  const [saindo, setSaindo] = useState(false);
+  const [autenticacaoBio, setAutenticacaoBio] = useState(false);
 
   useEffect(() => {
-    async function carregar() {
-      try {
-        const res = await api.get("/auth/me");
-        const u: Usuario = res.data.data?.user ?? res.data;
-        setUsuario(u);
-      } catch {
-        // silencioso
-      } finally {
-        setCarregando(false);
+    AsyncStorage.getItem("@aspen_bio_ativada").then((v) => {
+      if (v === "true") setAutenticacaoBio(true);
+    });
+  }, []);
+
+  const [modalBiometria, setModalBiometria] = useState(false);
+  const [bioEmail, setBioEmail] = useState("");
+  const [bioSenha, setBioSenha] = useState("");
+  const [bioCarregando, setBioCarregando] = useState(false);
+  const [bioMostrarSenha, setBioMostrarSenha] = useState(false);
+
+  async function handleToggleBiometria(valor: boolean) {
+    if (valor) {
+      const compativel = await LocalAuthentication.hasHardwareAsync();
+      const registrado = await LocalAuthentication.isEnrolledAsync();
+
+      if (!compativel || !registrado) {
+        Alert.alert(t("attention"), "Seu dispositivo não possui biometria configurada nas configurações do sistema.");
+        return;
       }
+
+      // Pré-preenche com email do usuário logado
+      setBioEmail(usuario?.email ?? "");
+      setBioSenha("");
+      setModalBiometria(true);
+    } else {
+      setAutenticacaoBio(false);
+      await AsyncStorage.setItem("@aspen_bio_ativada", "false");
+
+      // Precisa apagar as MESMAS chaves que o login.tsx usa pra liberar o
+      // acesso por biometria (por e-mail). Antes isso apagava chaves sem
+      // sufixo de e-mail (@aspen_bio_email / @aspen_bio_senha), que nunca
+      // existiram — por isso a biometria continuava funcionando no login
+      // mesmo com o switch desligado aqui.
+      const emailAlvo = usuario?.email ?? (await AsyncStorage.getItem("@aspen_bio_ultimo_email"));
+      if (emailAlvo) {
+        await AsyncStorage.removeItem(`@aspen_bio_${emailAlvo}`);
+        await AsyncStorage.removeItem(`@aspen_bio_senha_${emailAlvo}`);
+        await AsyncStorage.removeItem("@aspen_bio_ultimo_email");
+      }
+
+      Alert.alert(t("success"), "Biometria desativada.");
     }
-    carregar();
+  }
+
+  async function confirmarAtivacaoBiometria() {
+    if (!bioEmail || !bioSenha) {
+      Alert.alert(t("attention"), "Preencha e-mail e senha."); return;
+    }
+    setBioCarregando(true);
+    try {
+      // Valida credenciais
+      const { signInWithEmailAndPassword } = await import("firebase/auth");
+      await signInWithEmailAndPassword(auth, bioEmail, bioSenha);
+
+      // Autentica biometria
+      const resultado = await LocalAuthentication.authenticateAsync({
+        promptMessage: "Confirme com sua biometria para ativar",
+        cancelLabel: t("cancel"),
+      });
+
+      if (resultado.success) {
+        await AsyncStorage.setItem(`@aspen_bio_${bioEmail}`, "true");
+        await AsyncStorage.setItem(`@aspen_bio_senha_${bioEmail}`, bioSenha);
+        await AsyncStorage.setItem("@aspen_bio_ultimo_email", bioEmail);
+        // Chave que o switch desta tela lê no useEffect ao montar — faltava
+        // gravar isso, então o toggle voltava a aparecer desligado mesmo
+        // com a biometria já ativa e funcionando no login.
+        await AsyncStorage.setItem("@aspen_bio_ativada", "true");
+        setAutenticacaoBio(true);
+        setModalBiometria(false);
+        Alert.alert(t("success"), "Biometria ativada! Na próxima vez, entre sem digitar senha.");
+      }
+    } catch (err: any) {
+      const msg = err?.code === "auth/wrong-password" || err?.code === "auth/invalid-credential"
+        ? "Senha incorreta." : "Erro ao verificar credenciais.";
+      Alert.alert(t("error"), msg);
+    } finally {
+      setBioCarregando(false);
+    }
+  }
+  const [alertasLogin, setAlertasLogin] = useState(true);
+
+  useEffect(() => {
+    api.get("/auth/me").then((res) => {
+      setUsuario(res.data.data?.user ?? res.data);
+    }).catch(() => {}).finally(() => setCarregando(false));
   }, []);
 
   async function handleSair() {
-    Alert.alert("Sair", "Deseja encerrar a sessão?", [
-      { text: "Cancelar", style: "cancel" },
+    Alert.alert(t("logout"), t("logoutConfirm"), [
+      { text: t("cancel"), style: "cancel" },
       {
-        text: "Sair", style: "destructive", onPress: async () => {
+        text: t("logout"), style: "destructive", onPress: async () => {
           setSaindo(true);
-          try {
-            await signOut(auth);
-            router.replace("/login");
-          } catch {
-            Alert.alert("Erro", "Não foi possível sair. Tente novamente.");
-          } finally {
-            setSaindo(false);
-          }
+          try { await signOut(auth); router.replace("/login"); }
+          catch { Alert.alert(t("error"), t("logoutError")); }
+          finally { setSaindo(false); }
         },
       },
     ]);
   }
 
+  const planLabel = (p: string) => ({
+    basico: t("planBasico"), padrao: t("planPadrao"), premium: t("planPremium"),
+  }[p] ?? p);
+
+  const inics = usuario?.name?.split(" ").filter(Boolean).slice(0, 2).map((n) => n[0].toUpperCase()).join("") ?? "?";
+
   if (carregando) {
-    return (
-      <View style={styles.loading}>
-        <ActivityIndicator size="large" color={TEAL} />
-      </View>
-    );
+    return <View style={[styles.loading, { backgroundColor: colors.bg }]}><ActivityIndicator size="large" color={TEAL} /></View>;
   }
 
   return (
-    <View style={{ flex: 1, backgroundColor: "#f5f7f8" }}>
-      {/* Header */}
-      <View style={styles.headerBar}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-          <Ionicons name="arrow-back" size={22} color="#0f172a" />
+    <View style={{ flex: 1, backgroundColor: colors.bg }}>
+      {/* Header manual (sem usar componente Header pra evitar padding duplo) */}
+      <View style={[styles.headerBar, { backgroundColor: colors.headerBg, borderBottomColor: colors.border }]}>
+        <TouchableOpacity onPress={() => router.back()} style={[styles.backBtn, { backgroundColor: colors.inputBg }]}>
+          <Ionicons name="arrow-back" size={22} color={colors.text} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Configurações</Text>
+        <View style={styles.headerLogo}>
+          <Image source={logo} style={styles.logoImg} resizeMode="contain" />
+          <Text style={[styles.headerLogoText, { color: colors.text }]}>ASPEN CORE</Text>
+        </View>
         <View style={{ width: 36 }} />
       </View>
 
-      <View style={{ flex: 1, flexDirection: "row" }}>
-        {/* Menu lateral */}
-        <ScrollView style={styles.menu} showsVerticalScrollIndicator={false}>
-          {SECOES.map((sec) => (
-            <TouchableOpacity
-              key={sec}
-              style={[styles.menuItem, secaoAtiva === sec && styles.menuItemAtivo]}
-              onPress={() => setSecaoAtiva(sec)}
-            >
-              <Text style={[styles.menuItemText, secaoAtiva === sec && styles.menuItemTextAtivo]}>{sec}</Text>
-            </TouchableOpacity>
-          ))}
-
-          {/* Botão sair */}
-          <TouchableOpacity style={styles.menuItemSair} onPress={handleSair} disabled={saindo}>
-            {saindo
-              ? <ActivityIndicator size="small" color="#ef4444" />
-              : <Text style={styles.menuItemSairText}>Sair</Text>}
+      {/* Abas horizontais */}
+      <ScrollView horizontal showsHorizontalScrollIndicator={false}
+        style={[styles.abasScroll, { backgroundColor: colors.abasBg, borderBottomColor: colors.border }]}
+        contentContainerStyle={styles.abasContent}>
+        {SECOES_KEYS.map((key) => (
+          <TouchableOpacity key={key} style={[styles.aba, secaoAtiva === key && styles.abaAtiva]} onPress={() => setSecaoAtiva(key)}>
+            <Text style={[styles.abaText, { color: colors.textMuted }, secaoAtiva === key && styles.abaTextAtiva]}>{t(key as any)}</Text>
           </TouchableOpacity>
-        </ScrollView>
+        ))}
+      </ScrollView>
 
-        {/* Conteúdo */}
-        <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 12 }}>
+      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16 }}>
 
-          {/* ---- Conta ---- */}
-          {secaoAtiva === "Conta" && (
-            <View style={styles.card}>
-              <Text style={styles.cardTitulo}>Conta</Text>
+        {/* ---- Conta ---- */}
+        {secaoAtiva === "account" && (
+          <View>
+            {/* Card do usuário com foto */}
+            <View style={[styles.card, styles.userCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              <View style={styles.userAvatarWrap}>
+                {photoUri
+                  ? <Image source={{ uri: photoUri }} style={styles.userAvatarImg} />
+                  : (
+                    <View style={styles.userAvatar}>
+                      <Text style={styles.userAvatarText}>{inics}</Text>
+                    </View>
+                  )
+                }
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.userNome, { color: colors.text }]} numberOfLines={1}>{usuario?.name ?? "—"}</Text>
+                <Text style={[styles.userEmail, { color: colors.textSec }]} numberOfLines={1}>{usuario?.email ?? "—"}</Text>
+                <View style={styles.planBadge}>
+                  <Text style={styles.planBadgeText}>{planLabel(usuario?.plan ?? "")}</Text>
+                </View>
+              </View>
+            </View>
 
-              <View style={styles.userPreview}>
-                <View style={styles.userPreviewAvatar}>
-                  <Text style={styles.userPreviewAvatarText}>
-                    {usuario?.name?.split(" ").map((n) => n[0]).slice(0,2).join("").toUpperCase() ?? "?"}
+            <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border, marginTop: 12 }]}>
+              <ItemAcao titulo={t("editProfile")} descricao={t("editProfileDesc")} onPress={() => router.push("/(tabs)/profile" as any)} colors={colors} />
+              <Divisor color={colors.border} />
+              <ItemAcao titulo={t("changePassword")} descricao={t("changePasswordDesc")} onPress={() => router.push("/(tabs)/profile" as any)} colors={colors} />
+              <Divisor color={colors.border} />
+              <ItemAcao titulo={t("managePlan")} descricao={`${t("currentPlan")}: ${planLabel(usuario?.plan ?? "")}`} onPress={() => router.push("/(tabs)/planos" as any)} colors={colors} />
+            </View>
+
+            <TouchableOpacity style={[styles.btnSair, { borderColor: "#fecaca" }]} onPress={handleSair} disabled={saindo}>
+              {saindo
+                ? <ActivityIndicator color="#ef4444" size="small" />
+                : <>
+                    <Ionicons name="log-out-outline" size={18} color="#ef4444" />
+                    <Text style={styles.btnSairText}>{t("logout")}</Text>
+                  </>
+              }
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {/* ---- Privacidade ---- */}
+        {secaoAtiva === "privacy" && (
+          <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <ItemToggle titulo={t("shareData")} descricao={t("shareDataDesc")} value={compartilharDados} onValueChange={setCompartilharDados} colors={colors} />
+            <Divisor color={colors.border} />
+            <ItemToggle titulo={t("analyticsCookies")} descricao={t("analyticsCookiesDesc")} value={cookies} onValueChange={setCookies} colors={colors} />
+            <Divisor color={colors.border} />
+            <ItemAcao titulo={t("privacyPolicy")} onPress={() => router.push("/politica-de-privacidade" as any)} colors={colors} />
+            <Divisor color={colors.border} />
+            <ItemAcao titulo={t("termsOfUse")} onPress={() => router.push("/termos-de-uso" as any)} colors={colors} />
+          </View>
+        )}
+
+        {/* ---- Segurança ---- */}
+        {secaoAtiva === "security" && (
+          <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <ItemToggle titulo={t("biometric")} descricao={t("biometricDesc")} value={autenticacaoBio} onValueChange={handleToggleBiometria} colors={colors} />
+            <Divisor color={colors.border} />
+            <ItemToggle titulo={t("loginAlerts")} descricao={t("loginAlertsDesc")} value={alertasLogin} onValueChange={setAlertasLogin} colors={colors} />
+            <Divisor color={colors.border} />
+            <ItemAcao titulo={t("changePassword")} descricao={t("changePasswordDesc")} onPress={() => router.push("/(tabs)/profile" as any)} colors={colors} />
+            <Divisor color={colors.border} />
+            <ItemAcao titulo={t("deleteAccountShort")} descricao={t("deleteAccountShortDesc")} onPress={() => router.push("/(tabs)/profile" as any)} cor="#ef4444" icone="warning-outline" colors={colors} />
+          </View>
+        )}
+
+        {/* ---- Preferências ---- */}
+        {secaoAtiva === "preferences" && (
+          <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <ItemToggle titulo={t("pushNotifications")} descricao={t("pushNotificationsDesc")} value={notifPush} onValueChange={setNotifPush} colors={colors} />
+            <Divisor color={colors.border} />
+            <ItemToggle titulo={t("emailNotifications")} descricao={t("emailNotificationsDesc")} value={notifEmail} onValueChange={setNotifEmail} colors={colors} />
+            <Divisor color={colors.border} />
+            <TouchableOpacity style={styles.itemRow} onPress={() => setModalIdioma(true)}>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.itemTitulo, { color: colors.text }]}>{t("language")}</Text>
+                <Text style={[styles.itemDesc, { color: colors.textMuted }]}>{LOCALE_LABELS[locale]}</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
+            </TouchableOpacity>
+            <Divisor color={colors.border} />
+            <TouchableOpacity style={styles.itemRow} onPress={() => setModalTema(true)}>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.itemTitulo, { color: colors.text }]}>{t("theme")}</Text>
+                <Text style={[styles.itemDesc, { color: colors.textMuted }]}>{theme === "light" ? t("lightMode") : t("darkMode")}</Text>
+              </View>
+              <Ionicons name={theme === "light" ? "sunny-outline" : "moon-outline"} size={18} color={TEAL} />
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {/* ---- Sobre ---- */}
+        {secaoAtiva === "about" && (
+          <View>
+            <View style={[styles.card, styles.sobreHeader, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              <Image source={logo} style={styles.sobreLogo} resizeMode="contain" />
+              <Text style={[styles.sobreNome, { color: colors.text }]}>ASPEN CORE</Text>
+              <Text style={[styles.sobreTagline, { color: colors.textSec }]}>{t("securityDigital")}</Text>
+              <Text style={[styles.sobreVersao, { color: colors.textMuted }]}>{t("version")} 1.0.0</Text>
+            </View>
+            <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border, marginTop: 12 }]}>
+              <ItemAcao titulo={t("termsOfUse")} onPress={() => router.push("/termos-de-uso" as any)} colors={colors} />
+              <Divisor color={colors.border} />
+              <ItemAcao titulo={t("privacyPolicy")} onPress={() => router.push("/politica-de-privacidade" as any)} colors={colors} />
+              <Divisor color={colors.border} />
+              <ItemAcao titulo={t("instagram")} descricao="@aspencore0" onPress={() => Linking.openURL("https://www.instagram.com/aspencore0/")} icone="logo-instagram" colors={colors} />
+              <Divisor color={colors.border} />
+              <ItemAcao titulo={t("contact")} descricao="aspencorp0@gmail.com" onPress={() => Linking.openURL("mailto:aspencorp0@gmail.com")} icone="mail-outline" colors={colors} />
+            </View>
+            <Text style={[styles.copyright, { color: colors.textMuted }]}>{t("copyright")}</Text>
+          </View>
+        )}
+
+        <View style={{ height: 32 }} />
+      </ScrollView>
+
+      {/* Modal: ativar biometria */}
+      <Modal visible={modalBiometria} transparent animationType="fade" onRequestClose={() => setModalBiometria(false)}>
+        <Pressable style={styles.modalOverlay} onPress={() => setModalBiometria(false)}>
+          <Pressable style={[styles.modalSheet, { backgroundColor: colors.card, borderTopLeftRadius: 20, borderTopRightRadius: 20 }]} onPress={(e) => e.stopPropagation()}>
+            <View style={[styles.modalHandle, { backgroundColor: colors.border }]} />
+            <Text style={[styles.modalTitulo, { color: colors.text }]}>{t("biometric")}</Text>
+            <Text style={[{ fontSize: 13, color: colors.textSec, marginBottom: 16 }]}>
+              Confirme suas credenciais para ativar o acesso por biometria.
+            </Text>
+            <View style={[bioStyles.inputWrap, { borderColor: colors.inputBorder, backgroundColor: colors.inputBg }]}>
+              <Ionicons name="mail-outline" size={16} color={colors.textMuted} style={{ marginRight: 8 }} />
+              <TextInput
+                style={[bioStyles.input, { color: colors.text }]}
+                value={bioEmail}
+                onChangeText={setBioEmail}
+                placeholder="seu@email.com"
+                placeholderTextColor={colors.textMuted}
+                keyboardType="email-address"
+                autoCapitalize="none"
+              />
+            </View>
+            <View style={[bioStyles.inputWrap, { borderColor: colors.inputBorder, backgroundColor: colors.inputBg }]}>
+              <Ionicons name="lock-closed-outline" size={16} color={colors.textMuted} style={{ marginRight: 8 }} />
+              <TextInput
+                style={[bioStyles.input, { color: colors.text, flex: 1 }]}
+                value={bioSenha}
+                onChangeText={setBioSenha}
+                placeholder="Sua senha"
+                placeholderTextColor={colors.textMuted}
+                secureTextEntry={!bioMostrarSenha}
+                autoCapitalize="none"
+              />
+              <TouchableOpacity onPress={() => setBioMostrarSenha(!bioMostrarSenha)}>
+                <Ionicons name={bioMostrarSenha ? "eye-off-outline" : "eye-outline"} size={16} color={colors.textMuted} />
+              </TouchableOpacity>
+            </View>
+            <TouchableOpacity style={bioStyles.btnConfirmar} onPress={confirmarAtivacaoBiometria} disabled={bioCarregando}>
+              {bioCarregando
+                ? <ActivityIndicator color="white" size="small" />
+                : <>
+                    <Ionicons name="finger-print-outline" size={18} color="white" />
+                    <Text style={bioStyles.btnConfirmarText}>Confirmar e ativar biometria</Text>
+                  </>
+              }
+            </TouchableOpacity>
+            <TouchableOpacity style={[styles.modalFechar, { borderTopColor: colors.border, marginTop: 8 }]} onPress={() => setModalBiometria(false)}>
+              <Text style={[styles.modalFecharText, { color: colors.textSec }]}>{t("cancel")}</Text>
+            </TouchableOpacity>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      {/* Modal: idioma */}
+      <Modal visible={modalIdioma} transparent animationType="slide" onRequestClose={() => setModalIdioma(false)}>
+        <Pressable style={styles.modalOverlay} onPress={() => setModalIdioma(false)}>
+          <Pressable style={[styles.modalSheet, { backgroundColor: colors.card }]} onPress={(e) => e.stopPropagation()}>
+            <View style={[styles.modalHandle, { backgroundColor: colors.border }]} />
+            <Text style={[styles.modalTitulo, { color: colors.text }]}>{t("language")}</Text>
+            {(Object.keys(LOCALE_LABELS) as Locale[]).map((loc) => (
+              <TouchableOpacity key={loc} style={[styles.localeItem, locale === loc && { backgroundColor: "#e6f4f4" }]}
+                onPress={() => { setLocale(loc); setModalIdioma(false); }}>
+                <Text style={[styles.localeTitulo, { color: colors.text }, locale === loc && { color: TEAL, fontWeight: "700" }]}>{LOCALE_LABELS[loc]}</Text>
+                {locale === loc && <Ionicons name="checkmark" size={18} color={TEAL} />}
+              </TouchableOpacity>
+            ))}
+            <TouchableOpacity style={[styles.modalFechar, { borderTopColor: colors.border }]} onPress={() => setModalIdioma(false)}>
+              <Text style={[styles.modalFecharText, { color: colors.textSec }]}>{t("close")}</Text>
+            </TouchableOpacity>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      {/* Modal: tema */}
+      <Modal visible={modalTema} transparent animationType="slide" onRequestClose={() => setModalTema(false)}>
+        <Pressable style={styles.modalOverlay} onPress={() => setModalTema(false)}>
+          <Pressable style={[styles.modalSheet, { backgroundColor: colors.card }]} onPress={(e) => e.stopPropagation()}>
+            <View style={[styles.modalHandle, { backgroundColor: colors.border }]} />
+            <Text style={[styles.modalTitulo, { color: colors.text }]}>{t("theme")}</Text>
+            {(["light", "dark"] as Theme[]).map((th) => (
+              <TouchableOpacity key={th} style={[styles.localeItem, theme === th && { backgroundColor: "#e6f4f4" }]}
+                onPress={() => { setTheme(th); setModalTema(false); }}>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
+                  <Ionicons name={th === "light" ? "sunny-outline" : "moon-outline"} size={20} color={theme === th ? TEAL : colors.textSec} />
+                  <Text style={[styles.localeTitulo, { color: colors.text }, theme === th && { color: TEAL, fontWeight: "700" }]}>
+                    {th === "light" ? t("lightMode") : t("darkMode")}
                   </Text>
                 </View>
-                <View>
-                  <Text style={styles.userPreviewNome}>{usuario?.name ?? "—"}</Text>
-                  <Text style={styles.userPreviewEmail}>{usuario?.email ?? "—"}</Text>
-                  <View style={styles.planBadge}>
-                    <Text style={styles.planBadgeText}>Plano {planLabel(usuario?.plan ?? "")}</Text>
-                  </View>
-                </View>
-              </View>
-
-              <Divisor />
-              <ItemAcao
-                titulo="Editar perfil"
-                descricao="Nome, telefone e CPF"
-                onPress={() => router.push("/(tabs)/profile" as any)}
-              />
-              <Divisor />
-              <ItemAcao
-                titulo="Alterar senha"
-                descricao="Redefina sua senha de acesso"
-                onPress={() => { setSecaoAtiva("Segurança"); }}
-              />
-              <Divisor />
-              <ItemAcao
-                titulo="Gerenciar plano"
-                descricao={`Você está no plano ${planLabel(usuario?.plan ?? "")}`}
-                onPress={() => router.push("/(tabs)/planos" as any)}
-              />
-            </View>
-          )}
-
-          {/* ---- Privacidade ---- */}
-          {secaoAtiva === "Privacidade" && (
-            <View style={styles.card}>
-              <Text style={styles.cardTitulo}>Privacidade</Text>
-              <ItemToggle
-                titulo="Compartilhar dados de uso anônimos"
-                descricao="Ajuda a melhorar o produto."
-                value={compartilharDados}
-                onValueChange={setCompartilharDados}
-              />
-              <Divisor />
-              <ItemToggle
-                titulo="Cookies de análise"
-                descricao="Usados para medir o desempenho do sistema."
-                value={cookies}
-                onValueChange={setCookies}
-              />
-              <Divisor />
-              <ItemAcao
-                titulo="Política de privacidade"
-                onPress={() => router.push("/politica-de-privacidade" as any)}
-              />
-              <Divisor />
-              <ItemAcao
-                titulo="Termos de uso"
-                onPress={() => router.push("/termos-de-uso" as any)}
-              />
-            </View>
-          )}
-
-          {/* ---- Segurança ---- */}
-          {secaoAtiva === "Segurança" && (
-            <View style={styles.card}>
-              <Text style={styles.cardTitulo}>Segurança</Text>
-              <ItemToggle
-                titulo="Autenticação biométrica"
-                descricao="Use impressão digital ou Face ID para entrar."
-                value={autenticacaoBio}
-                onValueChange={setAutenticacaoBio}
-              />
-              <Divisor />
-              <ItemToggle
-                titulo="Alertas de login suspeito"
-                descricao="Notificação quando detectar acesso incomum."
-                value={alertasLogin}
-                onValueChange={setAlertasLogin}
-              />
-              <Divisor />
-              <ItemAcao
-                titulo="Alterar senha"
-                descricao="Redefina sua senha de acesso"
-                onPress={() => router.push("/(tabs)/profile" as any)}
-              />
-              <Divisor />
-              <ItemAcao
-                titulo="Excluir conta"
-                descricao="Remove permanentemente sua conta e dados"
-                onPress={() => router.push("/(tabs)/profile" as any)}
-                cor="#ef4444"
-                icone="warning-outline"
-              />
-            </View>
-          )}
-
-          {/* ---- Preferências ---- */}
-          {secaoAtiva === "Preferências" && (
-            <View style={styles.card}>
-              <Text style={styles.cardTitulo}>Preferências</Text>
-              <ItemToggle
-                titulo="Notificações push"
-                descricao="Receba alertas de segurança no celular."
-                value={notifPush}
-                onValueChange={setNotifPush}
-              />
-              <Divisor />
-              <ItemToggle
-                titulo="Notificações por e-mail"
-                descricao="Receba resumo semanal de atividades."
-                value={notifEmail}
-                onValueChange={setNotifEmail}
-              />
-              <Divisor />
-              <View style={styles.configRow}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.configTitulo}>Idioma</Text>
-                  <Text style={styles.configDesc}>Português (Brasil)</Text>
-                </View>
-                <View style={styles.idiomaTag}>
-                  <Text style={styles.idiomaTagText}>PT-BR</Text>
-                </View>
-              </View>
-            </View>
-          )}
-
-          {/* ---- Sobre ---- */}
-          {secaoAtiva === "Sobre" && (
-            <View style={styles.card}>
-              <Text style={styles.cardTitulo}>Sobre o Aspen Core</Text>
-              <View style={styles.sobreHeader}>
-                <Ionicons name="shield-checkmark-outline" size={40} color={TEAL} />
-                <Text style={styles.sobreNome}>ASPEN CORE</Text>
-                <Text style={styles.sobreTagline}>Segurança Digital</Text>
-                <Text style={styles.sobreVersao}>Versão 1.0.0</Text>
-              </View>
-              <Divisor />
-              <ItemAcao titulo="Termos de uso" onPress={() => router.push("/termos-de-uso" as any)} />
-              <Divisor />
-              <ItemAcao titulo="Política de privacidade" onPress={() => router.push("/politica-de-privacidade" as any)} />
-              <Divisor />
-              <ItemAcao
-                titulo="Instagram"
-                descricao="@aspencore0"
-                onPress={() => Linking.openURL("https://www.instagram.com/aspencore0/")}
-                icone="logo-instagram"
-              />
-              <Divisor />
-              <ItemAcao
-                titulo="Fale conosco"
-                descricao="aspencorp0@gmail.com"
-                onPress={() => Linking.openURL("mailto:aspencorp0@gmail.com")}
-                icone="mail-outline"
-              />
-              <Divisor />
-              <Text style={styles.sobreCopyright}>© 2026 ASPEN CORE. Todos os direitos reservados.</Text>
-            </View>
-          )}
-
-          <View style={{ height: 32 }} />
-        </ScrollView>
-      </View>
+                {theme === th && <Ionicons name="checkmark" size={18} color={TEAL} />}
+              </TouchableOpacity>
+            ))}
+            <TouchableOpacity style={[styles.modalFechar, { borderTopColor: colors.border }]} onPress={() => setModalTema(false)}>
+              <Text style={[styles.modalFecharText, { color: colors.textSec }]}>{t("close")}</Text>
+            </TouchableOpacity>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  loading: { flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: "#f5f7f8" },
-
-  headerBar: {
-    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
-    paddingTop: 56, paddingBottom: 12, paddingHorizontal: 16,
-    backgroundColor: "white", borderBottomWidth: 0.5, borderBottomColor: "#e2e8f0",
-  },
+  loading: { flex: 1, justifyContent: "center", alignItems: "center" },
+  headerBar: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingTop: 56, paddingBottom: 14, paddingHorizontal: 16, borderBottomWidth: 0.5 },
   backBtn: { width: 36, height: 36, borderRadius: 18, alignItems: "center", justifyContent: "center" },
-  headerTitle: { fontSize: 16, fontWeight: "700", color: "#0f172a" },
+  headerLogo: { flexDirection: "row", alignItems: "center", gap: 6 },
+  headerLogoText: { fontSize: 11, fontWeight: "700", letterSpacing: 0.8 },
+  logoImg: { width: 18, height: 18 },
+  sobreLogo: { width: 64, height: 64 },
+  abasScroll: { borderBottomWidth: 0.5, flexGrow: 0, flexShrink: 1 },
+  abasContent: { paddingHorizontal: 8, alignItems: "center" },
+  aba: { paddingHorizontal: 14, paddingVertical: 16 },
+  abaAtiva: { borderBottomWidth: 2, borderBottomColor: TEAL },
+  abaText: { fontSize: 13, fontWeight: "500" },
+  abaTextAtiva: { color: TEAL, fontWeight: "700" },
+  card: { borderRadius: 14, borderWidth: 0.5, padding: 16 },
+  userCard: { flexDirection: "row", alignItems: "center", gap: 14 },
+  userAvatarWrap: { flexShrink: 0 },
+  userAvatar: { width: 52, height: 52, borderRadius: 26, backgroundColor: TEAL, alignItems: "center", justifyContent: "center" },
+  userAvatarImg: { width: 52, height: 52, borderRadius: 26 },
+  userAvatarText: { color: "white", fontSize: 18, fontWeight: "700" },
+  userNome: { fontSize: 15, fontWeight: "700", marginBottom: 2 },
+  userEmail: { fontSize: 12, marginBottom: 6 },
+  planBadge: { backgroundColor: "#e6f4f4", paddingHorizontal: 8, paddingVertical: 3, borderRadius: 12, alignSelf: "flex-start" },
+  planBadgeText: { fontSize: 11, fontWeight: "600", color: TEAL },
+  itemRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 14, gap: 8 },
+  itemTitulo: { fontSize: 14, fontWeight: "600", marginBottom: 2 },
+  itemDesc: { fontSize: 12 },
+  divider: { height: 0.5 },
+  btnSair: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, marginTop: 12, borderRadius: 14, borderWidth: 1, paddingVertical: 16 },
+  btnSairText: { fontSize: 15, fontWeight: "700", color: "#ef4444" },
+  sobreHeader: { alignItems: "center", gap: 6, paddingVertical: 16 },
+  sobreNome: { fontSize: 18, fontWeight: "700", letterSpacing: 1 },
+  sobreTagline: { fontSize: 13 },
+  sobreVersao: { fontSize: 12, marginTop: 4 },
+  copyright: { textAlign: "center", fontSize: 11, marginTop: 16 },
+  modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end" },
+  modalSheet: { borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20, paddingBottom: 36 },
+  modalHandle: { width: 40, height: 4, borderRadius: 2, alignSelf: "center", marginBottom: 16 },
+  modalTitulo: { fontSize: 17, fontWeight: "700", marginBottom: 12 },
+  localeItem: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 14, paddingHorizontal: 12, borderRadius: 10 },
+  localeTitulo: { fontSize: 15, fontWeight: "500" },
+  modalFechar: { borderTopWidth: 0.5, paddingTop: 16, alignItems: "center" },
+  modalFecharText: { fontSize: 15, fontWeight: "600" },
+});
 
-  menu: {
-    width: 100, backgroundColor: "white",
-    borderRightWidth: 0.5, borderRightColor: "#e2e8f0",
-  },
-  menuItem: { paddingVertical: 14, paddingHorizontal: 12 },
-  menuItemAtivo: { backgroundColor: "#e6f4f4", borderRightWidth: 2, borderRightColor: TEAL },
-  menuItemText: { fontSize: 12, color: "#64748b", fontWeight: "500" },
-  menuItemTextAtivo: { color: TEAL, fontWeight: "700" },
-  menuItemSair: { paddingVertical: 14, paddingHorizontal: 12, marginTop: 8, borderTopWidth: 0.5, borderTopColor: "#e2e8f0" },
-  menuItemSairText: { fontSize: 12, color: "#ef4444", fontWeight: "600" },
-
-  card: {
-    backgroundColor: "white", borderRadius: 12,
-    borderWidth: 0.5, borderColor: "#e2e8f0", padding: 16,
-  },
-  cardTitulo: { fontSize: 14, fontWeight: "700", color: "#0f172a", marginBottom: 14 },
-
-  userPreview: { flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 4 },
-  userPreviewAvatar: {
-    width: 44, height: 44, borderRadius: 22,
-    backgroundColor: TEAL, alignItems: "center", justifyContent: "center",
-  },
-  userPreviewAvatarText: { color: "white", fontSize: 16, fontWeight: "700" },
-  userPreviewNome: { fontSize: 14, fontWeight: "600", color: "#0f172a", marginBottom: 1 },
-  userPreviewEmail: { fontSize: 11, color: "#64748b", marginBottom: 6 },
-
-  planBadge: { backgroundColor: "#e6f4f4", paddingHorizontal: 8, paddingVertical: 2, borderRadius: 12, alignSelf: "flex-start" },
-  planBadgeText: { fontSize: 10, fontWeight: "600", color: TEAL },
-
-  configRow: {
-    flexDirection: "row", justifyContent: "space-between",
-    alignItems: "center", paddingVertical: 13, gap: 8,
-  },
-  configTitulo: { fontSize: 12, fontWeight: "600", color: "#0f172a", marginBottom: 2 },
-  configDesc: { fontSize: 11, color: "#94a3b8" },
-
-  divider: { height: 0.5, backgroundColor: "#e2e8f0" },
-
-  idiomaTag: {
-    borderWidth: 1, borderColor: "#e2e8f0", borderRadius: 8,
-    paddingHorizontal: 10, paddingVertical: 5,
-  },
-  idiomaTagText: { fontSize: 11, color: "#475569", fontWeight: "600" },
-
-  sobreHeader: { alignItems: "center", paddingVertical: 16, gap: 4 },
-  sobreNome: { fontSize: 16, fontWeight: "700", color: "#0f172a", letterSpacing: 1 },
-  sobreTagline: { fontSize: 12, color: "#64748b" },
-  sobreVersao: { fontSize: 11, color: "#94a3b8", marginTop: 4 },
-  sobreCopyright: { fontSize: 11, color: "#94a3b8", textAlign: "center", paddingTop: 14 },
+const bioStyles = StyleSheet.create({
+  inputWrap: { flexDirection: "row", alignItems: "center", borderWidth: 1, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 11, marginBottom: 12 },
+  input: { flex: 1, fontSize: 14 },
+  btnConfirmar: { backgroundColor: "#0b6b6b", borderRadius: 10, paddingVertical: 13, alignItems: "center", flexDirection: "row", justifyContent: "center", gap: 8 },
+  btnConfirmarText: { color: "white", fontWeight: "700", fontSize: 14 },
 });

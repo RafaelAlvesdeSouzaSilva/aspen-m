@@ -7,11 +7,17 @@ import {
 } from "react-native";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
+import { Image } from "react-native";
+import { useI18n } from "@/contexts/i18n";
 
 const TEAL = "#0b6b6b";
 
 export default function PoliticaDePrivacidade() {
   const router = useRouter();
+  const { theme, colors } = useI18n();
+  const logo = theme === "dark"
+    ? require("@/assets/images/logo-icone.png")
+    : require("@/assets/images/logo-alt.png");
 
   return (
     <View style={styles.container}>

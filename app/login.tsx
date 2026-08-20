@@ -1,8 +1,11 @@
+import { useI18n } from "@/contexts/i18n";
 import { auth } from "@/services/firebase";
 import { Ionicons } from "@expo/vector-icons";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import * as LocalAuthentication from "expo-local-authentication";
 import { useRouter } from "expo-router";
 import { signInWithEmailAndPassword } from "firebase/auth";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -16,6 +19,8 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+
+const TEAL = "#0b6b6b";
 
 function traduzirErroFirebase(codigo: string) {
   switch (codigo) {
@@ -34,24 +39,98 @@ function traduzirErroFirebase(codigo: string) {
 
 export default function Login() {
   const router = useRouter();
+  const { loadPhotoForUser } = useI18n();
+
   const [email, setEmail] = useState("");
   const [senha, setSenha] = useState("");
   const [mostrarSenha, setMostrarSenha] = useState(false);
   const [carregando, setCarregando] = useState(false);
+  const [biometriaDisponivel, setBiometriaDisponivel] = useState(false);
+  const [tipoBiometria, setTipoBiometria] = useState<"fingerprint" | "face">(
+    "fingerprint",
+  );
+  const [ultimoEmail, setUltimoEmail] = useState<string | null>(null);
+
+  useEffect(() => {
+    verificarBiometria();
+  }, []);
+
+  async function verificarBiometria() {
+    try {
+      const compativel = await LocalAuthentication.hasHardwareAsync();
+      const registrado = await LocalAuthentication.isEnrolledAsync();
+      if (!compativel || !registrado) return;
+
+      const emailSalvo = await AsyncStorage.getItem("@aspen_bio_ultimo_email");
+      if (!emailSalvo) return;
+
+      const bioAtivada = await AsyncStorage.getItem(`@aspen_bio_${emailSalvo}`);
+      const senhaSalva = await AsyncStorage.getItem(
+        `@aspen_bio_senha_${emailSalvo}`,
+      );
+      if (bioAtivada !== "true" || !senhaSalva) return;
+
+      setUltimoEmail(emailSalvo);
+      setBiometriaDisponivel(true);
+
+      const tipos =
+        await LocalAuthentication.supportedAuthenticationTypesAsync();
+      if (
+        tipos.includes(
+          LocalAuthentication.AuthenticationType.FACIAL_RECOGNITION,
+        )
+      ) {
+        setTipoBiometria("face");
+      } else {
+        setTipoBiometria("fingerprint");
+      }
+    } catch {}
+  }
+
+  async function loginComBiometria() {
+    if (!ultimoEmail) return;
+    try {
+      const resultado = await LocalAuthentication.authenticateAsync({
+        promptMessage: "Confirme sua identidade",
+        cancelLabel: "Usar senha",
+        fallbackLabel: "Usar senha",
+      });
+
+      if (resultado.success) {
+        setCarregando(true);
+        const senhaSalva = await AsyncStorage.getItem(
+          `@aspen_bio_senha_${ultimoEmail}`,
+        );
+        if (!senhaSalva) {
+          Alert.alert("Erro", "Credenciais não encontradas. Use sua senha.");
+          setCarregando(false);
+          return;
+        }
+        await fazerLogin(ultimoEmail, senhaSalva);
+      }
+    } catch {
+      Alert.alert("Erro", "Falha na autenticação biométrica.");
+    } finally {
+      setCarregando(false);
+    }
+  }
+
+  async function fazerLogin(emailLogin: string, senhaLogin: string) {
+    const cred = await signInWithEmailAndPassword(auth, emailLogin, senhaLogin);
+    await loadPhotoForUser(cred.user.uid);
+    router.replace("/(tabs)/dashboard");
+  }
 
   const handleLogin = async () => {
     if (!email || !senha) {
       Alert.alert("Atenção", "Preencha e-mail e senha.");
       return;
     }
-
     setCarregando(true);
     try {
-      await signInWithEmailAndPassword(auth, email, senha);
-      router.replace("/(tabs)/dashboard");
+      await fazerLogin(email, senha);
     } catch (err: any) {
-      const msg = traduzirErroFirebase(err.code);
-      Alert.alert("Erro", msg);
+      Alert.alert("Erro", traduzirErroFirebase(err.code));
     } finally {
       setCarregando(false);
     }
@@ -65,7 +144,7 @@ export default function Login() {
       <ScrollView style={styles.container} bounces={false}>
         <View style={styles.header}>
           <Image
-            source={require("@/assets/images/logo-icone.png")}
+            source={require("@/assets/images/logo-alt.png")}
             style={styles.logoIcon}
             resizeMode="contain"
           />
@@ -97,6 +176,38 @@ export default function Login() {
           <Text style={styles.formSub}>
             Entre com sua conta para continuar.
           </Text>
+
+          {/* Botão de biometria */}
+          {biometriaDisponivel && ultimoEmail && (
+            <TouchableOpacity
+              style={styles.btnBiometria}
+              onPress={loginComBiometria}
+              disabled={carregando}
+            >
+              <View style={styles.btnBiometriaIconWrap}>
+                <Ionicons
+                  name="finger-print-outline"
+                  size={28}
+                  color={TEAL}
+                />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.btnBiometriaTitulo}>
+                  Entrar com impressão digital
+                </Text>
+                <Text style={styles.btnBiometriaEmail}>{ultimoEmail}</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={16} color="#94a3b8" />
+            </TouchableOpacity>
+          )}
+
+          {biometriaDisponivel && (
+            <View style={styles.ouRow}>
+              <View style={styles.ouLine} />
+              <Text style={styles.ouText}>ou entre com senha</Text>
+              <View style={styles.ouLine} />
+            </View>
+          )}
 
           <Text style={styles.label}>E-mail *</Text>
           <View style={styles.inputWrap}>
@@ -175,8 +286,6 @@ export default function Login() {
   );
 }
 
-const TEAL = "#0b6b6b";
-
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#f5f7f8" },
   header: {
@@ -185,11 +294,7 @@ const styles = StyleSheet.create({
     paddingBottom: 32,
     paddingHorizontal: 24,
   },
-  logoIcon: {
-    width: 64,
-    height: 64,
-    marginBottom: 14,
-  },
+  logoIcon: { width: 64, height: 64, marginBottom: 14 },
   brand: { color: "white", fontSize: 13, fontWeight: "700", letterSpacing: 1 },
   brandSub: {
     color: "rgba(255,255,255,0.7)",
@@ -216,6 +321,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.06,
     shadowRadius: 8,
     elevation: 2,
+    marginBottom: 32,
   },
   formTitle: {
     fontSize: 20,
@@ -224,6 +330,35 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   formSub: { fontSize: 13, color: "#64748b", marginBottom: 20 },
+  btnBiometria: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    borderWidth: 1.5,
+    borderColor: TEAL,
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 8,
+    backgroundColor: "#f0fafa",
+  },
+  btnBiometriaIconWrap: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: "#e6f4f4",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  btnBiometriaTitulo: { fontSize: 14, fontWeight: "600", color: TEAL },
+  btnBiometriaEmail: { fontSize: 11, color: "#64748b", marginTop: 2 },
+  ouRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    marginBottom: 20,
+  },
+  ouLine: { flex: 1, height: 0.5, backgroundColor: "#e2e8f0" },
+  ouText: { fontSize: 12, color: "#94a3b8" },
   label: { fontSize: 12, color: "#475569", marginBottom: 6, fontWeight: "500" },
   labelRow: {
     flexDirection: "row",
