@@ -11,6 +11,7 @@ import {
   Alert,
   Image,
   KeyboardAvoidingView,
+  Linking,
   Platform,
   ScrollView,
   StyleSheet,
@@ -21,6 +22,7 @@ import {
 } from "react-native";
 
 const TEAL = "#0b6b6b";
+const ADMIN_PANEL_URL = "https://aspencore.onrender.com/pages/admin/index.html";
 
 function traduzirErroFirebase(codigo: string) {
   switch (codigo) {
@@ -117,6 +119,25 @@ export default function Login() {
 
   async function fazerLogin(emailLogin: string, senhaLogin: string) {
     const cred = await signInWithEmailAndPassword(auth, emailLogin, senhaLogin);
+
+    // Mesma lógica do redirectAfterLogin() do web (client/js/features/auth.js):
+    // admin não usa o app mobile, é direcionado pro painel web.
+    try {
+      const tokenResult = await cred.user.getIdTokenResult(true);
+      if (tokenResult.claims.role === "admin") {
+        await auth.signOut();
+        const abriu = await Linking.canOpenURL(ADMIN_PANEL_URL);
+        if (abriu) await Linking.openURL(ADMIN_PANEL_URL);
+        Alert.alert(
+          "Conta administrativa",
+          "Contas de administrador só têm acesso pelo painel web. Abrimos o painel no seu navegador.",
+        );
+        return;
+      }
+    } catch {
+      // Se falhar ao ler claims, segue o fluxo normal (mesmo comportamento do web)
+    }
+
     await loadPhotoForUser(cred.user.uid);
     router.replace("/(tabs)/dashboard");
   }

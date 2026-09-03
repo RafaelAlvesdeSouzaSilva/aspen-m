@@ -1,25 +1,106 @@
-import { useState } from "react";
-import { View, Text, ScrollView, StyleSheet, TouchableOpacity } from "react-native";
+import { useEffect, useState } from "react";
+import { View, Text, ScrollView, StyleSheet, TouchableOpacity, ActivityIndicator } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import {
+  collection, doc, updateDoc, query, orderBy, onSnapshot,
+  type Timestamp,
+} from "firebase/firestore";
 import Header from "@/components/Header";
 import { useI18n } from "@/contexts/i18n";
+import { auth, db } from "@/services/firebase";
 
 const TEAL = "#0b6b6b";
 
-const notificacoesIniciais = [
-  { id: "1", titulo: "Phishing bloqueado", desc: "Uma tentativa de phishing foi detectada e bloqueada automaticamente no seu iPhone 14.", hora: "Hoje, 08:42", lida: false, icon: "warning-outline", iconColor: "#f59e0b" },
-  { id: "2", titulo: "Assinatura renovada", desc: "Sua assinatura Padrão foi renovada automaticamente.", hora: "Ontem, 10:00", lida: false, icon: "checkmark-circle-outline", iconColor: "#16a34a" },
-  { id: "3", titulo: "Novo dispositivo adicionado", desc: "iPad Air foi adicionado com sucesso à sua conta.", hora: "Ontem, 18:30", lida: false, icon: "tablet-portrait-outline", iconColor: TEAL },
-];
+type TipoNotif = "danger" | "success" | "info" | "warning" | "security" | "summary" | "default";
+
+type Notificacao = {
+  id: string;
+  title: string;
+  text: string;
+  type: TipoNotif;
+  read: boolean;
+  created_at: Timestamp | null;
+};
+
+const ICONE_POR_TIPO: Record<TipoNotif, { icon: keyof typeof Ionicons.glyphMap; cor: string }> = {
+  danger: { icon: "warning-outline", cor: "#ef4444" },
+  success: { icon: "checkmark-circle-outline", cor: "#16a34a" },
+  info: { icon: "information-circle-outline", cor: TEAL },
+  warning: { icon: "warning-outline", cor: "#f59e0b" },
+  security: { icon: "shield-checkmark-outline", cor: TEAL },
+  summary: { icon: "bar-chart-outline", cor: TEAL },
+  default: { icon: "notifications-outline", cor: "#94a3b8" },
+};
+
+function formatarData(ts: Timestamp | null) {
+  if (!ts) return "Agora mesmo";
+  const d = ts.toDate ? ts.toDate() : new Date(ts as any);
+  return d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
+}
 
 export default function Notificacoes() {
   const { colors, t } = useI18n();
-  const [notifs, setNotifs] = useState(notificacoesIniciais);
+  const [notifs, setNotifs] = useState<Notificacao[]>([]);
+  const [carregando, setCarregando] = useState(true);
   const [abaAtiva, setAbaAtiva] = useState("all");
 
-  const marcarLida = (id: string) => setNotifs((prev) => prev.map((n) => n.id === id ? { ...n, lida: true } : n));
-  const marcarTodasLidas = () => setNotifs((prev) => prev.map((n) => ({ ...n, lida: true })));
-  const naoLidas = notifs.filter((n) => !n.lida).length;
+  useEffect(() => {
+    const uid = auth.currentUser?.uid;
+    if (!uid) {
+      setCarregando(false);
+      return;
+    }
+    const notifRef = collection(db, "users", uid, "notifications");
+    const q = query(notifRef, orderBy("created_at", "desc"));
+    const unsubscribe = onSnapshot(
+      q,
+      (snapshot) => {
+        const lista: Notificacao[] = snapshot.docs.map((docSnap) => {
+          const d = docSnap.data() as any;
+          return {
+            id: docSnap.id,
+            title: d.title || "",
+            text: d.text || "",
+            type: (d.type as TipoNotif) || "default",
+            read: d.read === 1 || d.read === true,
+            created_at: d.created_at ?? null,
+          };
+        });
+        setNotifs(lista);
+        setCarregando(false);
+      },
+      () => setCarregando(false),
+    );
+    return unsubscribe;
+  }, []);
+
+  async function marcarLida(id: string) {
+    const uid = auth.currentUser?.uid;
+    if (!uid) return;
+    // Atualização otimista — o listener do Firestore confirma em seguida
+    setNotifs((prev) => prev.map((n) => (n.id === id ? { ...n, read: true } : n)));
+    try {
+      await updateDoc(doc(db, "users", uid, "notifications", id), { read: 1 });
+    } catch {
+      // Se falhar, o próximo snapshot do Firestore corrige o estado sozinho
+    }
+  }
+
+  async function marcarTodasLidas() {
+    const uid = auth.currentUser?.uid;
+    if (!uid) return;
+    const naoLidas = notifs.filter((n) => !n.read);
+    setNotifs((prev) => prev.map((n) => ({ ...n, read: true })));
+    try {
+      await Promise.all(
+        naoLidas.map((n) => updateDoc(doc(db, "users", uid, "notifications", n.id), { read: 1 })),
+      );
+    } catch {
+      // idem: o snapshot em tempo real reconcilia o estado
+    }
+  }
+
+  const naoLidas = notifs.filter((n) => !n.read).length;
 
   const abas = [
     { key: "all", label: t("allTab") },
@@ -27,7 +108,8 @@ export default function Notificacoes() {
     { key: "read", label: t("readTab") },
   ];
 
-  const filtradas = abaAtiva === "all" ? notifs : abaAtiva === "unread" ? notifs.filter((n) => !n.lida) : notifs.filter((n) => n.lida);
+  const filtradas =
+    abaAtiva === "all" ? notifs : abaAtiva === "unread" ? notifs.filter((n) => !n.read) : notifs.filter((n) => n.read);
 
   return (
     <ScrollView style={[styles.container, { backgroundColor: colors.bg }]}>
@@ -50,38 +132,45 @@ export default function Notificacoes() {
       </View>
 
       <View style={styles.section}>
-        {filtradas.length === 0 ? (
+        {carregando ? (
+          <View style={[styles.emptyCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <ActivityIndicator color={TEAL} />
+          </View>
+        ) : filtradas.length === 0 ? (
           <View style={[styles.emptyCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
             <Ionicons name="notifications-off-outline" size={40} color={colors.textMuted} />
             <Text style={[styles.emptyText, { color: colors.textMuted }]}>{t("noNotifications")}</Text>
           </View>
         ) : (
           <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            {filtradas.map((n, i) => (
-              <View key={n.id}>
-                <View style={styles.notifRow}>
-                  <View style={[styles.notifIconWrap, { backgroundColor: n.iconColor + "18" }]}>
-                    <Ionicons name={n.icon as any} size={20} color={n.iconColor} />
-                  </View>
-                  <View style={styles.notifContent}>
-                    <View style={styles.notifTitleRow}>
-                      {!n.lida && <View style={styles.dot} />}
-                      <Text style={[styles.notifTitulo, { color: colors.text }]}>{n.titulo}</Text>
+            {filtradas.map((n, i) => {
+              const cfg = ICONE_POR_TIPO[n.type] ?? ICONE_POR_TIPO.default;
+              return (
+                <View key={n.id}>
+                  <View style={styles.notifRow}>
+                    <View style={[styles.notifIconWrap, { backgroundColor: cfg.cor + "18" }]}>
+                      <Ionicons name={cfg.icon} size={20} color={cfg.cor} />
                     </View>
-                    <Text style={[styles.notifDesc, { color: colors.textSec }]}>{n.desc}</Text>
-                    <View style={styles.notifFooter}>
-                      <Text style={[styles.notifHora, { color: colors.textMuted }]}>{n.hora}</Text>
-                      {!n.lida && (
-                        <TouchableOpacity onPress={() => marcarLida(n.id)}>
-                          <Text style={styles.marcarLida}>{t("markRead")}</Text>
-                        </TouchableOpacity>
-                      )}
+                    <View style={styles.notifContent}>
+                      <View style={styles.notifTitleRow}>
+                        {!n.read && <View style={styles.dot} />}
+                        <Text style={[styles.notifTitulo, { color: colors.text }]}>{n.title}</Text>
+                      </View>
+                      <Text style={[styles.notifDesc, { color: colors.textSec }]}>{n.text}</Text>
+                      <View style={styles.notifFooter}>
+                        <Text style={[styles.notifHora, { color: colors.textMuted }]}>{formatarData(n.created_at)}</Text>
+                        {!n.read && (
+                          <TouchableOpacity onPress={() => marcarLida(n.id)}>
+                            <Text style={styles.marcarLida}>{t("markRead")}</Text>
+                          </TouchableOpacity>
+                        )}
+                      </View>
                     </View>
                   </View>
+                  {i < filtradas.length - 1 && <View style={[styles.divider, { backgroundColor: colors.border }]} />}
                 </View>
-                {i < filtradas.length - 1 && <View style={[styles.divider, { backgroundColor: colors.border }]} />}
-              </View>
-            ))}
+              );
+            })}
           </View>
         )}
       </View>

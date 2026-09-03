@@ -1,12 +1,15 @@
 import { Ionicons } from "@expo/vector-icons";
 import { signOut } from "firebase/auth";
+import {
+  doc, getDoc, setDoc, updateDoc, addDoc, collection, serverTimestamp,
+} from "firebase/firestore";
 import { useRouter } from "expo-router";
 import { useEffect, useState } from "react";
 import {
   ActivityIndicator, Alert, Image, Linking, Modal, Pressable,
   ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View,
 } from "react-native";
-import { auth } from "@/services/firebase";
+import { auth, db } from "@/services/firebase";
 import api from "@/services/api";
 import { useI18n, LOCALE_LABELS, type Locale, type Theme } from "@/contexts/i18n";
 import * as LocalAuthentication from "expo-local-authentication";
@@ -22,9 +25,9 @@ function Divisor({ color }: { color: string }) {
   return <View style={[styles.divider, { backgroundColor: color }]} />;
 }
 
-function ItemToggle({ titulo, descricao, value, onValueChange, colors }: {
+function ItemToggle({ titulo, descricao, value, onValueChange, colors, carregando }: {
   titulo: string; descricao?: string; value: boolean;
-  onValueChange: (v: boolean) => void; colors: any;
+  onValueChange: (v: boolean) => void; colors: any; carregando?: boolean;
 }) {
   return (
     <View style={styles.itemRow}>
@@ -32,7 +35,9 @@ function ItemToggle({ titulo, descricao, value, onValueChange, colors }: {
         <Text style={[styles.itemTitulo, { color: colors.text }]}>{titulo}</Text>
         {!!descricao && <Text style={[styles.itemDesc, { color: colors.textMuted }]}>{descricao}</Text>}
       </View>
-      <Switch value={value} onValueChange={onValueChange} trackColor={{ false: "#e2e8f0", true: TEAL }} thumbColor="white" />
+      {carregando
+        ? <ActivityIndicator size="small" color={TEAL} />
+        : <Switch value={value} onValueChange={onValueChange} trackColor={{ false: "#e2e8f0", true: TEAL }} thumbColor="white" />}
     </View>
   );
 }
@@ -66,16 +71,48 @@ export default function Configuracoes() {
   const [modalIdioma, setModalIdioma] = useState(false);
   const [modalTema, setModalTema] = useState(false);
 
-  const [notifPush, setNotifPush] = useState(true);
-  const [notifEmail, setNotifEmail] = useState(true);
+  // ------------------------------------------------------------------
+  // Preferências reais — mesmo mecanismo do web: users/{uid}.preferences
+  // no Firestore (não é enfeite local, persiste e afeta o backend de
+  // verdade: share_usage controla o usage-tracker, login_alerts controla
+  // se o backend manda alerta de login suspeito, weekly_summary controla
+  // o resumo semanal).
+  // ------------------------------------------------------------------
+  const [prefsCarregando, setPrefsCarregando] = useState(true);
   const [compartilharDados, setCompartilharDados] = useState(true);
   const [cookies, setCookies] = useState(false);
+  const [alertasLogin, setAlertasLogin] = useState(true);
+  const [resumoSemanal, setResumoSemanal] = useState(true);
+  const [doisFatores, setDoisFatores] = useState(false);
+  const [salvandoPref, setSalvandoPref] = useState<string | null>(null);
+
+  // Notificações push: não existe infraestrutura de push (FCM) no backend
+  // ainda — fica como preferência só local (AsyncStorage), avisado na UI.
+  const [notifPush, setNotifPush] = useState(true);
+
   const [autenticacaoBio, setAutenticacaoBio] = useState(false);
 
   useEffect(() => {
     AsyncStorage.getItem("@aspen_bio_ativada").then((v) => {
       if (v === "true") setAutenticacaoBio(true);
     });
+    AsyncStorage.getItem("@aspen_notif_push_local").then((v) => {
+      if (v === "false") setNotifPush(false);
+    });
+  }, []);
+
+  useEffect(() => {
+    const uid = auth.currentUser?.uid;
+    if (!uid) { setPrefsCarregando(false); return; }
+    getDoc(doc(db, "users", uid)).then((snap) => {
+      const data = snap.exists() ? snap.data() : null;
+      const prefs = data?.preferences ?? {};
+      setCompartilharDados(prefs.share_usage !== false);
+      setAlertasLogin(prefs.login_alerts !== false);
+      setResumoSemanal(prefs.weekly_summary !== false);
+      setDoisFatores(!!prefs.two_factor);
+      setCookies(data?.consentimentoLGPD?.tipo === "todos");
+    }).catch(() => {}).finally(() => setPrefsCarregando(false));
   }, []);
 
   const [modalBiometria, setModalBiometria] = useState(false);
@@ -94,7 +131,6 @@ export default function Configuracoes() {
         return;
       }
 
-      // Pré-preenche com email do usuário logado
       setBioEmail(usuario?.email ?? "");
       setBioSenha("");
       setModalBiometria(true);
@@ -102,10 +138,9 @@ export default function Configuracoes() {
       setAutenticacaoBio(false);
       await AsyncStorage.setItem("@aspen_bio_ativada", "false");
 
-      // Precisa apagar as MESMAS chaves que o login.tsx usa pra liberar o
-      // acesso por biometria (por e-mail). Antes isso apagava chaves sem
-      // sufixo de e-mail (@aspen_bio_email / @aspen_bio_senha), que nunca
-      // existiram — por isso a biometria continuava funcionando no login
+      // Apaga as MESMAS chaves que o login.tsx usa pra liberar o acesso
+      // por biometria (por e-mail) — antes isso apagava chaves erradas
+      // (sem sufixo de e-mail) e a biometria continuava ativa no login
       // mesmo com o switch desligado aqui.
       const emailAlvo = usuario?.email ?? (await AsyncStorage.getItem("@aspen_bio_ultimo_email"));
       if (emailAlvo) {
@@ -124,11 +159,9 @@ export default function Configuracoes() {
     }
     setBioCarregando(true);
     try {
-      // Valida credenciais
       const { signInWithEmailAndPassword } = await import("firebase/auth");
       await signInWithEmailAndPassword(auth, bioEmail, bioSenha);
 
-      // Autentica biometria
       const resultado = await LocalAuthentication.authenticateAsync({
         promptMessage: "Confirme com sua biometria para ativar",
         cancelLabel: t("cancel"),
@@ -138,9 +171,9 @@ export default function Configuracoes() {
         await AsyncStorage.setItem(`@aspen_bio_${bioEmail}`, "true");
         await AsyncStorage.setItem(`@aspen_bio_senha_${bioEmail}`, bioSenha);
         await AsyncStorage.setItem("@aspen_bio_ultimo_email", bioEmail);
-        // Chave que o switch desta tela lê no useEffect ao montar — faltava
-        // gravar isso, então o toggle voltava a aparecer desligado mesmo
-        // com a biometria já ativa e funcionando no login.
+        // Chave que o switch desta tela lê ao montar — faltava gravar
+        // isso, então o toggle voltava a aparecer desligado mesmo com a
+        // biometria já ativa e funcionando no login.
         await AsyncStorage.setItem("@aspen_bio_ativada", "true");
         setAutenticacaoBio(true);
         setModalBiometria(false);
@@ -154,7 +187,6 @@ export default function Configuracoes() {
       setBioCarregando(false);
     }
   }
-  const [alertasLogin, setAlertasLogin] = useState(true);
 
   useEffect(() => {
     api.get("/auth/me").then((res) => {
@@ -176,6 +208,87 @@ export default function Configuracoes() {
     ]);
   }
 
+  // ------------------------------------------------------------------
+  // Salvar preferência real no Firestore (users/{uid}.preferences.<campo>)
+  // — mesmo padrão do initTogglesPersistencia() do web: grava, e pra
+  // alguns campos também registra log de segurança + notificação.
+  // ------------------------------------------------------------------
+  async function salvarPreferencia(
+    campo: "share_usage" | "login_alerts" | "weekly_summary" | "two_factor",
+    valor: boolean,
+    setState: (v: boolean) => void,
+  ) {
+    const uid = auth.currentUser?.uid;
+    if (!uid) return;
+    const valorAnterior = !valor;
+    setState(valor);
+    setSalvandoPref(campo);
+    try {
+      await setDoc(doc(db, "users", uid), { preferences: { [campo]: valor } }, { merge: true });
+
+      if (campo === "login_alerts" || campo === "two_factor") {
+        await addDoc(collection(db, "users", uid, "security_logs"), {
+          acao: `${campo}_${valor ? "ativado" : "desativado"}`,
+          detalhes: null,
+          dataHora: serverTimestamp(),
+          userAgent: "aspen-core-mobile",
+        }).catch(() => {});
+        await addDoc(collection(db, "users", uid, "notifications"), {
+          title: "Preferência de segurança atualizada",
+          text: campo === "login_alerts"
+            ? (valor ? "Alertas de login suspeito foram ativados." : "Alertas de login suspeito foram desativados.")
+            : (valor ? "Autenticação em duas etapas ativada." : "Autenticação em duas etapas desativada."),
+          type: "info",
+          read: 0,
+          created_at: serverTimestamp(),
+        }).catch(() => {});
+      }
+      if (campo === "share_usage") {
+        await addDoc(collection(db, "users", uid, "notifications"), {
+          title: "Preferência de privacidade atualizada",
+          text: valor
+            ? "Compartilhamento de dados de uso ativado."
+            : "Compartilhamento de dados de uso desativado. Nenhuma navegação sua será mais registrada.",
+          type: "info",
+          read: 0,
+          created_at: serverTimestamp(),
+        }).catch(() => {});
+      }
+    } catch {
+      setState(valorAnterior);
+      Alert.alert(t("error"), "Não foi possível salvar essa preferência. Tente novamente.");
+    } finally {
+      setSalvandoPref(null);
+    }
+  }
+
+  async function alternarCookies(valor: boolean) {
+    const uid = auth.currentUser?.uid;
+    if (!uid) return;
+    const anterior = !valor;
+    setCookies(valor);
+    setSalvandoPref("cookies");
+    try {
+      const registro = {
+        tipo: valor ? "todos" : "essenciais",
+        dataHora: serverTimestamp(),
+        userAgent: "aspen-core-mobile",
+      };
+      await setDoc(doc(db, "users", uid), { consentimentoLGPD: registro }, { merge: true });
+      await addDoc(collection(db, "users", uid, "consents"), registro);
+    } catch {
+      setCookies(anterior);
+      Alert.alert(t("error"), "Não foi possível salvar sua preferência de cookies.");
+    } finally {
+      setSalvandoPref(null);
+    }
+  }
+
+  async function alternarNotifPushLocal(valor: boolean) {
+    setNotifPush(valor);
+    await AsyncStorage.setItem("@aspen_notif_push_local", valor ? "true" : "false");
+  }
+
   const planLabel = (p: string) => ({
     basico: t("planBasico"), padrao: t("planPadrao"), premium: t("planPremium"),
   }[p] ?? p);
@@ -188,7 +301,6 @@ export default function Configuracoes() {
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
-      {/* Header manual (sem usar componente Header pra evitar padding duplo) */}
       <View style={[styles.headerBar, { backgroundColor: colors.headerBg, borderBottomColor: colors.border }]}>
         <TouchableOpacity onPress={() => router.back()} style={[styles.backBtn, { backgroundColor: colors.inputBg }]}>
           <Ionicons name="arrow-back" size={22} color={colors.text} />
@@ -200,7 +312,6 @@ export default function Configuracoes() {
         <View style={{ width: 36 }} />
       </View>
 
-      {/* Abas horizontais */}
       <ScrollView horizontal showsHorizontalScrollIndicator={false}
         style={[styles.abasScroll, { backgroundColor: colors.abasBg, borderBottomColor: colors.border }]}
         contentContainerStyle={styles.abasContent}>
@@ -216,7 +327,6 @@ export default function Configuracoes() {
         {/* ---- Conta ---- */}
         {secaoAtiva === "account" && (
           <View>
-            {/* Card do usuário com foto */}
             <View style={[styles.card, styles.userCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
               <View style={styles.userAvatarWrap}>
                 {photoUri
@@ -260,9 +370,23 @@ export default function Configuracoes() {
         {/* ---- Privacidade ---- */}
         {secaoAtiva === "privacy" && (
           <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <ItemToggle titulo={t("shareData")} descricao={t("shareDataDesc")} value={compartilharDados} onValueChange={setCompartilharDados} colors={colors} />
+            <ItemToggle
+              titulo={t("shareData")}
+              descricao={t("shareDataDesc")}
+              value={compartilharDados}
+              onValueChange={(v) => salvarPreferencia("share_usage", v, setCompartilharDados)}
+              colors={colors}
+              carregando={prefsCarregando || salvandoPref === "share_usage"}
+            />
             <Divisor color={colors.border} />
-            <ItemToggle titulo={t("analyticsCookies")} descricao={t("analyticsCookiesDesc")} value={cookies} onValueChange={setCookies} colors={colors} />
+            <ItemToggle
+              titulo={t("analyticsCookies")}
+              descricao={t("analyticsCookiesDesc")}
+              value={cookies}
+              onValueChange={alternarCookies}
+              colors={colors}
+              carregando={prefsCarregando || salvandoPref === "cookies"}
+            />
             <Divisor color={colors.border} />
             <ItemAcao titulo={t("privacyPolicy")} onPress={() => router.push("/politica-de-privacidade" as any)} colors={colors} />
             <Divisor color={colors.border} />
@@ -275,9 +399,27 @@ export default function Configuracoes() {
           <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
             <ItemToggle titulo={t("biometric")} descricao={t("biometricDesc")} value={autenticacaoBio} onValueChange={handleToggleBiometria} colors={colors} />
             <Divisor color={colors.border} />
-            <ItemToggle titulo={t("loginAlerts")} descricao={t("loginAlertsDesc")} value={alertasLogin} onValueChange={setAlertasLogin} colors={colors} />
+            <ItemToggle
+              titulo={t("loginAlerts")}
+              descricao={t("loginAlertsDesc")}
+              value={alertasLogin}
+              onValueChange={(v) => salvarPreferencia("login_alerts", v, setAlertasLogin)}
+              colors={colors}
+              carregando={prefsCarregando || salvandoPref === "login_alerts"}
+            />
+            <Divisor color={colors.border} />
+            <ItemToggle
+              titulo="Autenticação em duas etapas"
+              descricao="Camada extra de segurança para o seu login."
+              value={doisFatores}
+              onValueChange={(v) => salvarPreferencia("two_factor", v, setDoisFatores)}
+              colors={colors}
+              carregando={prefsCarregando || salvandoPref === "two_factor"}
+            />
             <Divisor color={colors.border} />
             <ItemAcao titulo={t("changePassword")} descricao={t("changePasswordDesc")} onPress={() => router.push("/(tabs)/profile" as any)} colors={colors} />
+            <Divisor color={colors.border} />
+            <ItemAcao titulo="Sessões ativas" descricao="Veja e encerre acessos em outros dispositivos" onPress={() => router.push("/(tabs)/sessoes" as any)} icone="phone-portrait-outline" colors={colors} />
             <Divisor color={colors.border} />
             <ItemAcao titulo={t("deleteAccountShort")} descricao={t("deleteAccountShortDesc")} onPress={() => router.push("/(tabs)/profile" as any)} cor="#ef4444" icone="warning-outline" colors={colors} />
           </View>
@@ -286,9 +428,22 @@ export default function Configuracoes() {
         {/* ---- Preferências ---- */}
         {secaoAtiva === "preferences" && (
           <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <ItemToggle titulo={t("pushNotifications")} descricao={t("pushNotificationsDesc")} value={notifPush} onValueChange={setNotifPush} colors={colors} />
+            <ItemToggle
+              titulo={t("pushNotifications")}
+              descricao="Salvo só neste aparelho — o app ainda não tem infraestrutura de push."
+              value={notifPush}
+              onValueChange={alternarNotifPushLocal}
+              colors={colors}
+            />
             <Divisor color={colors.border} />
-            <ItemToggle titulo={t("emailNotifications")} descricao={t("emailNotificationsDesc")} value={notifEmail} onValueChange={setNotifEmail} colors={colors} />
+            <ItemToggle
+              titulo="Resumo semanal"
+              descricao="Notificação no app com o resumo da sua atividade a cada 7 dias."
+              value={resumoSemanal}
+              onValueChange={(v) => salvarPreferencia("weekly_summary", v, setResumoSemanal)}
+              colors={colors}
+              carregando={prefsCarregando || salvandoPref === "weekly_summary"}
+            />
             <Divisor color={colors.border} />
             <TouchableOpacity style={styles.itemRow} onPress={() => setModalIdioma(true)}>
               <View style={{ flex: 1 }}>

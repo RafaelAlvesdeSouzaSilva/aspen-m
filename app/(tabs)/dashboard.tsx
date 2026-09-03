@@ -11,6 +11,7 @@ const LOGO_CLARA = require("@/assets/images/logo-icone.png");
 import { signOut } from "firebase/auth";
 import { auth } from "@/services/firebase";
 import api from "@/services/api";
+import { registerSession } from "@/services/session";
 import { useI18n } from "@/contexts/i18n";
 
 const TEAL = "#0b6b6b";
@@ -28,6 +29,8 @@ export default function Dashboard() {
   });
 
   useEffect(() => {
+    registerSession(); // fire-and-forget, igual ao loadUser() do web
+
     async function carregar() {
       try {
         const [resUser, resDevices] = await Promise.all([
@@ -36,7 +39,10 @@ export default function Dashboard() {
         ]);
         const u = resUser.data.data?.user ?? resUser.data;
         setUsuario(u);
-        setNumDispositivos(String(resDevices.data?.length ?? 0));
+        // O endpoint retorna { data: { devices: [...] } }, não um array
+        // direto — .data.length sempre dava undefined (mostrava "0" mesmo
+        // com dispositivos cadastrados).
+        setNumDispositivos(String(resDevices.data?.data?.devices?.length ?? 0));
       } catch (err) {
         console.error("Erro ao carregar dashboard:", err);
       }
@@ -203,6 +209,7 @@ export default function Dashboard() {
               { label: t("profile"), icon: "person-outline", route: "/(tabs)/profile" },
               { label: t("settings"), icon: "settings-outline", route: "/(tabs)/configuracoes" },
               { label: t("notifications"), icon: "notifications-outline", route: "/(tabs)/notificacao" },
+              { label: "Avaliações", icon: "chatbubble-ellipses-outline", route: "/(tabs)/avaliacoes" },
             ].map((item) => (
               <TouchableOpacity key={item.label} style={styles.dropdownItem} onPress={() => { setMenuAberto(false); router.push(item.route as any); }}>
                 <Ionicons name={item.icon as any} size={18} color={colors.textSec} />
