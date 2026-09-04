@@ -63,6 +63,16 @@ const PLANOS_INFO: Record<PlanoId, {
   },
 };
 
+// Esse backend, em alguns endpoints, devolve o usuário como
+// {data:{user}}, mas em outros devolve direto em {data:...} sem o
+// aninhamento — mesmo comportamento que já existia no dashboard.tsx
+// original (usava `resUser.data.data?.user ?? resUser.data`). Sem
+// esse plano B, a tela lia `undefined` e mostrava erro de carregamento
+// mesmo quando a requisição tinha dado certo.
+function extrairUsuario(res: any): Usuario | null {
+  return res.data?.data?.user ?? res.data?.user ?? res.data ?? null;
+}
+
 function formatarData(dataStr: string | null) {
   if (!dataStr) return "";
   const d = new Date(dataStr.replace(" ", "T"));
@@ -103,7 +113,7 @@ export default function Planos() {
     setErro(null);
     try {
       const res = await api.get("/auth/me");
-      setUsuario(res.data?.data?.user);
+      setUsuario(extrairUsuario(res));
     } catch (err: any) {
       setErro(err?.response?.data?.message ?? "Não foi possível carregar seus planos.");
     } finally {
@@ -153,7 +163,7 @@ export default function Planos() {
     setProcessando(true);
     try {
       const res = await api.put("/auth/plan", { plan: planoAlvo });
-      setUsuario(res.data?.data?.user);
+      setUsuario(extrairUsuario(res));
       setModalConfirmar(false);
       Alert.alert("Pronto", "Seu plano foi atualizado com sucesso.");
     } catch (err: any) {
@@ -186,7 +196,7 @@ export default function Planos() {
     setConfirmandoCartao(true);
     try {
       const res = await api.post("/payment/plan/card/confirm", { preapprovalId: cartaoPendente.id });
-      setUsuario(res.data?.data?.user);
+      setUsuario(extrairUsuario(res));
       setCartaoPendente(null);
       Alert.alert("Pronto", "Pagamento confirmado! Seu plano foi atualizado.");
     } catch (err: any) {
@@ -230,7 +240,7 @@ export default function Planos() {
     setCancelando(true);
     try {
       const res = await api.post("/auth/cancel-subscription");
-      setUsuario(res.data?.data?.user);
+      setUsuario(extrairUsuario(res));
       setModalCancelar(false);
       Alert.alert("Assinatura cancelada", "Você mantém acesso até o fim do período já pago.");
     } catch (err: any) {
@@ -244,7 +254,7 @@ export default function Planos() {
     setReativando(true);
     try {
       const res = await api.post("/auth/reactivate-subscription");
-      setUsuario(res.data?.data?.user);
+      setUsuario(extrairUsuario(res));
       Alert.alert("Pronto", "Sua assinatura foi mantida.");
     } catch (err: any) {
       Alert.alert("Erro", err?.response?.data?.message ?? "Não foi possível reativar a assinatura.");

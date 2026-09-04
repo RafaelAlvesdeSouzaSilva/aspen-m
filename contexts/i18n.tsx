@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import api from "@/services/api";
 
 export type Locale = "pt-BR" | "en" | "es" | "fr";
 export type Theme = "light" | "dark";
@@ -72,6 +73,8 @@ const translations = {
     expires: "Expira em", default: "Padrão", subscriptionDetails: "Detalhes da assinatura",
     changePhoto: "Alterar foto", removePhoto: "Remover foto", gallery: "Galeria",
     photoError: "Não foi possível selecionar a foto.",
+    photoTooBig: "Não foi possível comprimir a foto o suficiente. Tente outra imagem.",
+    photoSyncError: "Foto salva neste aparelho, mas não foi possível sincronizar com sua conta.",
 
     // Configurações
     settings: "Configurações", account: "Conta", privacy: "Privacidade",
@@ -154,6 +157,8 @@ const translations = {
     expires: "Expires", default: "Default", subscriptionDetails: "Subscription details",
     changePhoto: "Change photo", removePhoto: "Remove photo", gallery: "Gallery",
     photoError: "Could not select the photo.",
+    photoTooBig: "Could not compress the photo enough. Try another image.",
+    photoSyncError: "Photo saved on this device, but could not sync with your account.",
 
     settings: "Settings", account: "Account", privacy: "Privacy",
     preferences: "Preferences", about: "About", logout: "Sign out",
@@ -235,6 +240,8 @@ const translations = {
     expires: "Vence", default: "Predeterminado", subscriptionDetails: "Detalles de la suscripción",
     changePhoto: "Cambiar foto", removePhoto: "Eliminar foto", gallery: "Galería",
     photoError: "No se pudo seleccionar la foto.",
+    photoTooBig: "No se pudo comprimir la foto lo suficiente. Prueba con otra imagen.",
+    photoSyncError: "Foto guardada en este dispositivo, pero no se pudo sincronizar con tu cuenta.",
 
     settings: "Configuración", account: "Cuenta", privacy: "Privacidad",
     preferences: "Preferencias", about: "Acerca de", logout: "Cerrar sesión",
@@ -316,6 +323,8 @@ const translations = {
     expires: "Expire", default: "Par défaut", subscriptionDetails: "Détails de l'abonnement",
     changePhoto: "Changer la photo", removePhoto: "Supprimer la photo", gallery: "Galerie",
     photoError: "Impossible de sélectionner la photo.",
+    photoTooBig: "Impossible de compresser suffisamment la photo. Essayez une autre image.",
+    photoSyncError: "Photo enregistrée sur cet appareil, mais impossible de synchroniser avec votre compte.",
 
     settings: "Paramètres", account: "Compte", privacy: "Confidentialité",
     preferences: "Préférences", about: "À propos", logout: "Se déconnecter",
@@ -391,7 +400,11 @@ export function I18nProvider({ children }: { children: React.ReactNode }) {
 
   async function setLocale(l: Locale) { setLocaleState(l); await AsyncStorage.setItem("@aspen_locale", l); }
   async function setTheme(t: Theme) { setThemeState(t); await AsyncStorage.setItem("@aspen_theme", t); }
-  // uid opcional — se passado, salva associado ao usuário
+  // uid opcional — se passado, salva associado ao usuário.
+  // Isso continua sendo só o CACHE local (pra abrir rápido sem esperar a
+  // rede) — quem manda no valor de verdade é o backend, via PUT /auth/photo
+  // (chamado em profile.tsx). Sem esse cache local, a tela piscaria sem
+  // foto toda vez até a rede responder.
   async function setPhotoUri(uri: string | null, uid?: string) {
     setPhotoUriState(uri);
     const key = uid ? `@aspen_photo_${uid}` : "@aspen_photo_global";
@@ -399,13 +412,26 @@ export function I18nProvider({ children }: { children: React.ReactNode }) {
     else await AsyncStorage.removeItem(key);
   }
 
-  // Carrega a foto do usuário pelo UID após login
+  // Carrega a foto do usuário após login — antes só lia o cache local
+  // (AsyncStorage), então a foto nunca aparecia num aparelho novo nem
+  // sincronizava com o que foi definido pelo site. Agora busca a foto
+  // real salva no backend (/auth/me) e só cai pro cache local se a rede
+  // falhar, pra não deixar a tela sem nada num momento offline.
   async function loadPhotoForUser(uid: string) {
+    const key = `@aspen_photo_${uid}`;
     try {
-      const foto = await AsyncStorage.getItem(`@aspen_photo_${uid}`);
-      setPhotoUriState(foto ?? null);
+      const res = await api.get("/auth/me");
+      const fotoBackend: string | null = res.data?.data?.user?.photo ?? null;
+      setPhotoUriState(fotoBackend);
+      if (fotoBackend) await AsyncStorage.setItem(key, fotoBackend);
+      else await AsyncStorage.removeItem(key);
     } catch {
-      setPhotoUriState(null);
+      try {
+        const cache = await AsyncStorage.getItem(key);
+        setPhotoUriState(cache ?? null);
+      } catch {
+        setPhotoUriState(null);
+      }
     }
   }
 

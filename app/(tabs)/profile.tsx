@@ -3,6 +3,7 @@ import { EmailAuthProvider, reauthenticateWithCredential, updatePassword } from 
 import { useRouter } from "expo-router";
 import { useEffect, useState } from "react";
 import * as ImagePicker from "expo-image-picker";
+import * as ImageManipulator from "expo-image-manipulator";
 import {
   ActivityIndicator, Alert, Image, KeyboardAvoidingView, Modal,
   Platform, Pressable, ScrollView, StyleSheet, Text,
@@ -16,7 +17,7 @@ const TEAL = "#0b6b6b";
 
 type Usuario = {
   id: string; name: string; email: string;
-  phone: string | null; document: string | null;
+  phone: string | null; cpf: string | null;
   plan: string; plan_expires_at: string | null;
 };
 
@@ -75,6 +76,7 @@ export default function Perfil() {
   const [modalFoto, setModalFoto] = useState(false);
   const [senhaExcluir, setSenhaExcluir] = useState("");
   const [excluindo, setExcluindo] = useState(false);
+  const [enviandoFoto, setEnviandoFoto] = useState(false);
 
   useEffect(() => { carregarUsuario(); }, []);
   useEffect(() => { if (abaAtiva === 2) carregarMetodos(); }, [abaAtiva]);
@@ -87,7 +89,7 @@ export default function Perfil() {
       setUid(u.id ?? null);
       setNome(u.name ?? "");
       setTelefone(u.phone ? formatPhone(u.phone) : "");
-      setCpf(u.document ? formatCpf(u.document) : "");
+      setCpf(u.cpf ? formatCpf(u.cpf) : "");
     } catch {
       Alert.alert(t("error"), t("profileError"));
     } finally {
@@ -99,7 +101,7 @@ export default function Perfil() {
     setCarregandoMetodos(true);
     try {
       const res = await api.get("/payment-methods");
-      setMetodos(res.data ?? []);
+      setMetodos(res.data?.data?.methods ?? []);
     } catch { setMetodos([]); }
     finally { setCarregandoMetodos(false); }
   }
@@ -113,9 +115,10 @@ export default function Perfil() {
       const res = await api.put("/auth/profile", {
         name: nome.trim(),
         phone: telefone.replace(/\D/g, "") || null,
-        document: cpf.replace(/\D/g, "") || null,
+        cpf: cpf.replace(/\D/g, "") || null,
       });
-      if (res.data.user) setUsuario(res.data.user);
+      const atualizado = res.data?.data?.user;
+      if (atualizado) setUsuario(atualizado);
       Alert.alert(t("success"), t("profileSaved"));
     } catch { Alert.alert(t("error"), t("profileError")); }
     finally { setSalvando(false); }
@@ -156,7 +159,7 @@ export default function Perfil() {
       if (!user || !user.email) throw new Error("expired");
       const cred = EmailAuthProvider.credential(user.email, senhaExcluir);
       await reauthenticateWithCredential(user, cred);
-      await api.delete("/auth/account");
+      await api.delete("/auth/me");
       await auth.currentUser?.delete();
       setModalExcluir(false);
       router.replace("/login");
@@ -193,14 +196,66 @@ export default function Perfil() {
       aspect: [1, 1],
       quality: 0.8,
     });
-    if (!result.canceled && result.assets[0]) {
-      setPhotoUri(result.assets[0].uri, uid ?? undefined);
+    if (result.canceled || !result.assets[0]) return;
+
+    setEnviandoFoto(true);
+    try {
+      // O backend só aceita data:image/... com até 150KB em base64
+      // (updatePhoto em auth.controller.js). Redimensiona pra um avatar
+      // pequeno e vai reduzindo a qualidade até caber, igual a compressão
+      // que o navegador já faz no lado do web antes de mandar.
+      let qualidade = 0.7;
+      let base64: string | undefined;
+      let tentativas = 0;
+      let largura = 320;
+
+      while (tentativas < 5) {
+        const manipulado = await ImageManipulator.manipulateAsync(
+          result.assets[0].uri,
+          [{ resize: { width: largura, height: largura } }],
+          { compress: qualidade, format: ImageManipulator.SaveFormat.JPEG, base64: true },
+        );
+        base64 = manipulado.base64;
+        const tamanho = base64 ? base64.length : Infinity;
+        if (tamanho <= 145 * 1024) break; // folga de segurança abaixo dos 150KB do backend
+        qualidade = Math.max(0.3, qualidade - 0.15);
+        largura = Math.max(160, largura - 40);
+        tentativas++;
+      }
+
+      if (!base64 || base64.length > 150 * 1024) {
+        Alert.alert(t("attention"), t("photoTooBig"));
+        return;
+      }
+
+      const dataUri = `data:image/jpeg;base64,${base64}`;
+      const res = await api.put("/auth/photo", { photo: dataUri });
+      const atualizado = res.data?.data?.user;
+      if (atualizado) setUsuario(atualizado);
+      await setPhotoUri(dataUri, uid ?? undefined);
+    } catch {
+      // Ainda assim guarda localmente pra não perder a seleção do usuário,
+      // mas avisa que não sincronizou com a conta (ficará só neste aparelho).
+      await setPhotoUri(result.assets[0].uri, uid ?? undefined);
+      Alert.alert(t("error"), t("photoSyncError"));
+    } finally {
+      setEnviandoFoto(false);
     }
   }
 
   async function removerFoto() {
     setModalFoto(false);
-    setPhotoUri(null, uid ?? undefined);
+    setEnviandoFoto(true);
+    try {
+      const res = await api.put("/auth/photo", { photo: null });
+      const atualizado = res.data?.data?.user;
+      if (atualizado) setUsuario(atualizado);
+    } catch {
+      Alert.alert(t("error"), t("photoSyncError"));
+    } finally {
+      await setPhotoUri(null, uid ?? undefined);
+      setEnviandoFoto(false);
+    }
   }
 
   const planLabel = (p: string) => ({
@@ -240,12 +295,17 @@ export default function Perfil() {
       <ScrollView style={{ flex: 1 }} keyboardShouldPersistTaps="handled">
         {/* Avatar */}
         <View style={[styles.avatarSection, { backgroundColor: colors.headerBg, borderBottomColor: colors.border }]}>
-          <TouchableOpacity style={styles.avatarWrap} onPress={() => setModalFoto(true)}>
+          <TouchableOpacity style={styles.avatarWrap} onPress={() => setModalFoto(true)} disabled={enviandoFoto}>
             {photoUri ? (
               <Image source={{ uri: photoUri }} style={styles.avatarImg} />
             ) : (
               <View style={styles.avatarCircle}>
                 <Text style={styles.avatarText}>{inics}</Text>
+              </View>
+            )}
+            {enviandoFoto && (
+              <View style={styles.avatarOverlay}>
+                <ActivityIndicator color="white" size="small" />
               </View>
             )}
             <View style={styles.avatarEditBtn}>
@@ -296,7 +356,7 @@ export default function Perfil() {
                 <TouchableOpacity style={styles.btnPrimary} onPress={salvarDados} disabled={salvando}>
                   {salvando ? <ActivityIndicator color="white" size="small" /> : <Text style={styles.btnPrimaryText}>{t("save")}</Text>}
                 </TouchableOpacity>
-                <TouchableOpacity onPress={() => { setNome(usuario?.name ?? ""); setTelefone(usuario?.phone ? formatPhone(usuario.phone) : ""); setCpf(usuario?.document ? formatCpf(usuario.document) : ""); }}>
+                <TouchableOpacity onPress={() => { setNome(usuario?.name ?? ""); setTelefone(usuario?.phone ? formatPhone(usuario.phone) : ""); setCpf(usuario?.cpf ? formatCpf(usuario.cpf) : ""); }}>
                   <Text style={[styles.btnGhostText, { color: colors.textSec }]}>{t("cancel")}</Text>
                 </TouchableOpacity>
               </View>
@@ -469,6 +529,7 @@ const styles = StyleSheet.create({
   avatarImg: { width: 80, height: 80, borderRadius: 40 },
   avatarText: { color: "white", fontSize: 28, fontWeight: "700" },
   avatarEditBtn: { position: "absolute", bottom: 0, right: 0, width: 26, height: 26, borderRadius: 13, backgroundColor: TEAL, alignItems: "center", justifyContent: "center", borderWidth: 2, borderColor: "white" },
+  avatarOverlay: { position: "absolute", top: 0, left: 0, width: 80, height: 80, borderRadius: 40, backgroundColor: "rgba(0,0,0,0.4)", alignItems: "center", justifyContent: "center" },
   avatarNome: { fontSize: 20, fontWeight: "700", marginBottom: 3 },
   avatarEmail: { fontSize: 13, marginBottom: 12 },
   planBadge: { backgroundColor: "#e6f4f4", paddingHorizontal: 14, paddingVertical: 5, borderRadius: 20 },

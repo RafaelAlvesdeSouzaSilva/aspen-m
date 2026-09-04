@@ -9,20 +9,86 @@ import {
 const LOGO_ESCURA = require("@/assets/images/logo-alt.png");
 const LOGO_CLARA = require("@/assets/images/logo-icone.png");
 import { signOut } from "firebase/auth";
-import { auth } from "@/services/firebase";
+import { collection, query, orderBy, limit, onSnapshot, type Timestamp } from "firebase/firestore";
+import { auth, db } from "@/services/firebase";
 import api from "@/services/api";
 import { registerSession } from "@/services/session";
 import { useI18n } from "@/contexts/i18n";
 
 const TEAL = "#0b6b6b";
 
+type Usuario = { name: string; email: string; plan: string; plan_expires_at: string | null };
+
+type AtividadeItem = {
+  id: string;
+  type: string;
+  severity: "info" | "warning";
+  title: string;
+  deviceName: string | null;
+  created_at: string;
+};
+
+type NotifPreview = {
+  id: string;
+  title: string;
+  text: string;
+  type: string;
+  read: boolean;
+};
+
+// Esse backend às vezes devolve o payload sem o aninhamento {data:{...}}
+// esperado — mesmo cuidado aplicado nas outras telas (planos, dispositivos,
+// avaliações). Sem isso, partes da tela liam undefined mesmo com a
+// requisição respondendo certo.
+function extrairUsuario(res: any): Usuario | null {
+  return res.data?.data?.user ?? res.data?.user ?? res.data ?? null;
+}
+function extrairSummary(res: any): any {
+  return res.data?.data ?? res.data ?? {};
+}
+
+const ICONE_ATIVIDADE: Record<string, keyof typeof Ionicons.glyphMap> = {
+  device_added: "phone-portrait-outline",
+  device_removed: "trash-outline",
+  login: "log-in-outline",
+  login_alert: "warning-outline",
+  password_changed: "key-outline",
+};
+
+const ICONE_NOTIF: Record<string, { icon: keyof typeof Ionicons.glyphMap; cor: string }> = {
+  danger: { icon: "warning-outline", cor: "#ef4444" },
+  success: { icon: "checkmark-circle-outline", cor: "#16a34a" },
+  info: { icon: "information-circle-outline", cor: TEAL },
+  warning: { icon: "warning-outline", cor: "#f59e0b" },
+  security: { icon: "shield-checkmark-outline", cor: TEAL },
+  default: { icon: "notifications-outline", cor: "#94a3b8" },
+};
+
+function formatarRelativo(dataStr: string) {
+  const d = new Date(dataStr);
+  const diffMin = Math.floor((Date.now() - d.getTime()) / 60000);
+  if (diffMin < 1) return "Agora mesmo";
+  if (diffMin < 60) return `Há ${diffMin} min`;
+  if (diffMin < 1440) return `Há ${Math.floor(diffMin / 60)} h`;
+  return d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
+}
+
 export default function Dashboard() {
   const router = useRouter();
   const { colors, photoUri, t, theme } = useI18n();
   const logo = theme === "dark" ? LOGO_CLARA : LOGO_ESCURA;
   const [menuAberto, setMenuAberto] = useState(false);
-  const [usuario, setUsuario] = useState<{ name: string; email: string; plan: string; plan_expires_at: string | null } | null>(null);
+  const [usuario, setUsuario] = useState<Usuario | null>(null);
+
   const [numDispositivos, setNumDispositivos] = useState("—");
+  const [numOnline, setNumOnline] = useState(0);
+  const [alertasAtual, setAlertasAtual] = useState<number | null>(null);
+  const [alertasAnterior, setAlertasAnterior] = useState(0);
+  const [protecao, setProtecao] = useState<string | null>(null);
+  const [atividade, setAtividade] = useState<AtividadeItem[]>([]);
+  const [carregandoResumo, setCarregandoResumo] = useState(true);
+
+  const [notifs, setNotifs] = useState<NotifPreview[]>([]);
 
   const hoje = new Date().toLocaleDateString("pt-BR", {
     weekday: "long", day: "numeric", month: "long", year: "numeric",
@@ -33,21 +99,51 @@ export default function Dashboard() {
 
     async function carregar() {
       try {
-        const [resUser, resDevices] = await Promise.all([
+        const [resUser, resSummary] = await Promise.all([
           api.get("/auth/me"),
-          api.get("/devices"),
+          // Endpoint que o Igor já tinha pronto no backend e o mobile nunca
+          // usava — calcula dispositivos/alertas/nível de proteção/atividade
+          // de verdade a partir dos eventos reais da conta, em vez de
+          // valores fixos ("2 alertas", "Alto" sempre).
+          api.get("/dashboard/summary"),
         ]);
-        const u = resUser.data.data?.user ?? resUser.data;
-        setUsuario(u);
-        // O endpoint retorna { data: { devices: [...] } }, não um array
-        // direto — .data.length sempre dava undefined (mostrava "0" mesmo
-        // com dispositivos cadastrados).
-        setNumDispositivos(String(resDevices.data?.data?.devices?.length ?? 0));
+        setUsuario(extrairUsuario(resUser));
+
+        const summary = extrairSummary(resSummary);
+        setNumDispositivos(String(summary?.devices?.total ?? 0));
+        setNumOnline(summary?.devices?.online ?? 0);
+        setAlertasAtual(summary?.alerts?.current ?? 0);
+        setAlertasAnterior(summary?.alerts?.previous ?? 0);
+        setProtecao(summary?.protectionLevel ?? null);
+        setAtividade(Array.isArray(summary?.activity) ? summary.activity.slice(0, 3) : []);
       } catch (err) {
         console.error("Erro ao carregar dashboard:", err);
+      } finally {
+        setCarregandoResumo(false);
       }
     }
     carregar();
+  }, []);
+
+  // Prévia das notificações — mesma fonte (Firestore em tempo real) da
+  // tela de notificações, só que limitada às 3 mais recentes.
+  useEffect(() => {
+    const uid = auth.currentUser?.uid;
+    if (!uid) return;
+    const q = query(collection(db, "users", uid, "notifications"), orderBy("created_at", "desc"), limit(3));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      setNotifs(snapshot.docs.map((docSnap) => {
+        const d = docSnap.data() as any;
+        return {
+          id: docSnap.id,
+          title: d.title || "",
+          text: d.text || "",
+          type: d.type || "default",
+          read: d.read === 1 || d.read === true,
+        };
+      }));
+    });
+    return unsubscribe;
   }, []);
 
   const primeiroNome = usuario?.name?.split(" ")[0] ?? t("loading");
@@ -67,17 +163,23 @@ export default function Dashboard() {
     return usuario.plan === "basico" ? t("free") : t("active");
   };
 
-  const metricas = [
-    { label: t("deviceCount"), valor: numDispositivos, sub: t("allOnline"), subColor: "#16a34a", icon: "phone-portrait-outline" },
-    { label: t("subscriptionStatus"), valor: usuario ? planLabel(usuario.plan) : "—", sub: planSub(), subColor: TEAL, icon: "ribbon-outline" },
-    { label: t("alertsMonth"), valor: "2", sub: t("alertsDown"), subColor: "#16a34a", icon: "warning-outline" },
-    { label: t("protectionLevel"), valor: t("high"), sub: t("configured"), subColor: "#16a34a", icon: "shield-checkmark-outline" },
-  ];
+  const PROTECAO_LABEL: Record<string, string> = {
+    alto: t("high"), medio: "Médio", baixo: "Baixo", sem_dados: "—",
+  };
 
-  const notificacoes = [
-    { titulo: "Phishing bloqueado", desc: "Tentativa bloqueada no seu iPhone 14.", hora: "Hoje, 08:42", icon: "warning-outline", iconColor: "#f59e0b" },
-    { titulo: "Assinatura renovada", desc: "Assinatura renovada automaticamente.", hora: "Ontem, 10:00", icon: "checkmark-circle-outline", iconColor: "#16a34a" },
-    { titulo: "Novo dispositivo", desc: "iPad Air adicionado à sua conta.", hora: "Ontem, 18:30", icon: "tablet-portrait-outline", iconColor: TEAL },
+  const alertasSub = () => {
+    if (alertasAtual === null) return "—";
+    if (alertasAtual === 0) return "Nenhum alerta";
+    if (alertasAnterior === 0) return `${alertasAtual} este mês`;
+    const variacao = Math.round(((alertasAtual - alertasAnterior) / alertasAnterior) * 100);
+    return variacao <= 0 ? `↓ ${Math.abs(variacao)}% que mês anterior` : `↑ ${variacao}% que mês anterior`;
+  };
+
+  const metricas = [
+    { label: t("deviceCount"), valor: numDispositivos, sub: numOnline > 0 ? `${numOnline} online` : t("allOnline"), subColor: "#16a34a", icon: "phone-portrait-outline" },
+    { label: t("subscriptionStatus"), valor: usuario ? planLabel(usuario.plan) : "—", sub: planSub(), subColor: TEAL, icon: "ribbon-outline" },
+    { label: t("alertsMonth"), valor: alertasAtual === null ? "—" : String(alertasAtual), sub: alertasSub(), subColor: (alertasAtual ?? 0) === 0 ? "#16a34a" : "#f59e0b", icon: "warning-outline" },
+    { label: t("protectionLevel"), valor: protecao ? (PROTECAO_LABEL[protecao] ?? protecao) : "—", sub: protecao === "alto" ? t("configured") : "", subColor: "#16a34a", icon: "shield-checkmark-outline" },
   ];
 
   async function handleSair() {
@@ -138,7 +240,7 @@ export default function Dashboard() {
                 <Ionicons name={m.icon as any} size={18} color={TEAL} style={{ marginBottom: 8 }} />
                 <Text style={[styles.metricaLabel, { color: colors.textMuted }]}>{m.label}</Text>
                 <Text style={[styles.metricaValor, { color: colors.text }]}>{m.valor}</Text>
-                <Text style={[styles.metricaSub, { color: m.subColor }]}>{m.sub}</Text>
+                {!!m.sub && <Text style={[styles.metricaSub, { color: m.subColor }]}>{m.sub}</Text>}
               </View>
             ))}
           </View>
@@ -152,38 +254,68 @@ export default function Dashboard() {
               <Text style={styles.verTudo}>{t("seeAll")}</Text>
             </TouchableOpacity>
           </View>
-          <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            {notificacoes.map((n, i) => (
-              <View key={n.titulo}>
-                <View style={styles.notifRow}>
-                  <View style={[styles.notifIconWrap, { backgroundColor: n.iconColor + "18" }]}>
-                    <Ionicons name={n.icon as any} size={18} color={n.iconColor} />
-                  </View>
-                  <View style={styles.notifContent}>
-                    <View style={styles.notifTitleRow}>
-                      <View style={styles.dotUnread} />
-                      <Text style={[styles.notifTitulo, { color: colors.text }]}>{n.titulo}</Text>
+          {notifs.length === 0 ? (
+            <View style={[styles.card, styles.emptyCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              <Ionicons name="notifications-off-outline" size={28} color={colors.textMuted} />
+              <Text style={[styles.emptyText, { color: colors.textMuted }]}>{t("noNotifications")}</Text>
+            </View>
+          ) : (
+            <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              {notifs.map((n, i) => {
+                const cfg = ICONE_NOTIF[n.type] ?? ICONE_NOTIF.default;
+                return (
+                  <View key={n.id}>
+                    <View style={styles.notifRow}>
+                      <View style={[styles.notifIconWrap, { backgroundColor: cfg.cor + "18" }]}>
+                        <Ionicons name={cfg.icon} size={18} color={cfg.cor} />
+                      </View>
+                      <View style={styles.notifContent}>
+                        <View style={styles.notifTitleRow}>
+                          {!n.read && <View style={styles.dotUnread} />}
+                          <Text style={[styles.notifTitulo, { color: colors.text }]}>{n.title}</Text>
+                        </View>
+                        <Text style={[styles.notifDesc, { color: colors.textSec }]} numberOfLines={2}>{n.text}</Text>
+                      </View>
                     </View>
-                    <Text style={[styles.notifDesc, { color: colors.textSec }]}>{n.desc}</Text>
-                    <Text style={[styles.notifHora, { color: colors.textMuted }]}>{n.hora}</Text>
+                    {i < notifs.length - 1 && <View style={[styles.divider, { backgroundColor: colors.border }]} />}
                   </View>
-                </View>
-                {i < notificacoes.length - 1 && <View style={[styles.divider, { backgroundColor: colors.border }]} />}
-              </View>
-            ))}
-          </View>
+                );
+              })}
+            </View>
+          )}
         </View>
 
         {/* Atividade */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Text style={[styles.sectionTitle, { color: colors.text }]}>{t("recentActivity")}</Text>
-            <TouchableOpacity><Text style={styles.verTudo}>{t("seeMore")}</Text></TouchableOpacity>
           </View>
-          <View style={[styles.card, styles.emptyCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <Ionicons name="time-outline" size={32} color={colors.textMuted} />
-            <Text style={[styles.emptyText, { color: colors.textMuted }]}>{t("noRecentActivity")}</Text>
-          </View>
+          {atividade.length === 0 ? (
+            <View style={[styles.card, styles.emptyCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              <Ionicons name="time-outline" size={32} color={colors.textMuted} />
+              <Text style={[styles.emptyText, { color: colors.textMuted }]}>
+                {carregandoResumo ? t("loading") : t("noRecentActivity")}
+              </Text>
+            </View>
+          ) : (
+            <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              {atividade.map((a, i) => (
+                <View key={a.id}>
+                  <View style={styles.notifRow}>
+                    <View style={[styles.notifIconWrap, { backgroundColor: (a.severity === "warning" ? "#f59e0b" : TEAL) + "18" }]}>
+                      <Ionicons name={ICONE_ATIVIDADE[a.type] ?? "time-outline"} size={18} color={a.severity === "warning" ? "#f59e0b" : TEAL} />
+                    </View>
+                    <View style={styles.notifContent}>
+                      <Text style={[styles.notifTitulo, { color: colors.text }]}>{a.title}</Text>
+                      {!!a.deviceName && <Text style={[styles.notifDesc, { color: colors.textSec }]}>{a.deviceName}</Text>}
+                      <Text style={[styles.notifHora, { color: colors.textMuted }]}>{formatarRelativo(a.created_at)}</Text>
+                    </View>
+                  </View>
+                  {i < atividade.length - 1 && <View style={[styles.divider, { backgroundColor: colors.border }]} />}
+                </View>
+              ))}
+            </View>
+          )}
         </View>
 
         <View style={{ height: 32 }} />

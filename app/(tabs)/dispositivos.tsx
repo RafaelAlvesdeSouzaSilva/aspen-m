@@ -34,6 +34,13 @@ const LABEL_POR_TIPO: Record<TipoDispositivo, string> = {
   tablet: "tablet",
 };
 
+// Mesmo cuidado do planos.tsx: essa API às vezes devolve o payload sem
+// o aninhamento {data:{...}} esperado. Sem isso, a lista podia ficar
+// sempre vazia mesmo com dispositivos cadastrados de verdade.
+function extrairDispositivos(res: any): Dispositivo[] {
+  return res.data?.data?.devices ?? res.data?.devices ?? (Array.isArray(res.data) ? res.data : []);
+}
+
 function formatarUltimoAcesso(dataStr: string | null) {
   if (!dataStr) return "Nunca acessado";
   const data = new Date(dataStr);
@@ -69,7 +76,7 @@ export default function Dispositivos() {
     setErro(null);
     try {
       const res = await api.get("/devices");
-      setDispositivos(res.data?.data?.devices ?? []);
+      setDispositivos(extrairDispositivos(res));
     } catch (err: any) {
       setErro(
         err?.response?.data?.message ?? "Não foi possível carregar seus dispositivos.",
@@ -147,13 +154,15 @@ export default function Dispositivos() {
     setSalvandoNovo(true);
     setErroModal(null);
     try {
-      const res = await api.post("/devices", {
+      await api.post("/devices", {
         name: novoNome.trim(),
         type: novoTipo,
         os: novoOs.trim() || null,
       });
-      const dispositivo = res.data?.data?.device;
-      if (dispositivo) setDispositivos((prev) => [dispositivo, ...prev]);
+      // Recarrega da fonte real (GET /devices) em vez de confiar no
+      // formato exato do objeto devolvido pelo POST — se o dispositivo
+      // foi criado, ele aparece aqui de qualquer forma.
+      await carregarDispositivos(false);
       setModalAdicionar(false);
     } catch (err: any) {
       setErroModal(

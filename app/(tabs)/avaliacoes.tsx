@@ -37,6 +37,12 @@ const STATUS_INFO: Record<Status, { label: string; cor: string; fundo: string }>
   resolvido: { label: "Resolvido", cor: "#16a34a", fundo: "#dcfce7" },
 };
 
+// Mesmo cuidado das outras telas: essa API às vezes devolve o payload
+// sem o aninhamento {data:{...}} esperado.
+function extrairFeedbacks(res: any): Feedback[] {
+  return res.data?.data?.feedback ?? res.data?.feedback ?? (Array.isArray(res.data) ? res.data : []);
+}
+
 function formatarData(createdAt: Feedback["createdAt"]) {
   if (!createdAt) return "";
   const ms = typeof createdAt === "string"
@@ -80,7 +86,7 @@ export default function Avaliacoes() {
     setErro(null);
     try {
       const res = await api.get("/feedback/mine");
-      setLista(res.data?.data?.feedback ?? []);
+      setLista(extrairFeedbacks(res));
     } catch (err: any) {
       setErro(err?.response?.data?.message ?? "Não foi possível carregar suas avaliações.");
     } finally {
@@ -129,14 +135,13 @@ export default function Avaliacoes() {
     setErroForm(null);
     try {
       if (editandoId) {
-        const res = await api.patch(`/feedback/${editandoId}`, { category: categoria, rating: nota, message: mensagem.trim() });
-        const atualizado = res.data?.data?.feedback;
-        setLista((prev) => prev.map((f) => (f.id === editandoId ? atualizado : f)));
+        await api.patch(`/feedback/${editandoId}`, { category: categoria, rating: nota, message: mensagem.trim() });
       } else {
-        const res = await api.post("/feedback", { category: categoria, rating: nota, message: mensagem.trim(), page: "mobile" });
-        const novo = res.data?.data?.feedback;
-        if (novo) setLista((prev) => [novo, ...prev]);
+        await api.post("/feedback", { category: categoria, rating: nota, message: mensagem.trim(), page: "mobile" });
       }
+      // Recarrega da fonte real em vez de confiar no formato exato do
+      // objeto devolvido — se salvou, aparece aqui de qualquer forma.
+      await carregar(false);
       setModalForm(false);
     } catch (err: any) {
       setErroForm(err?.response?.data?.message ?? "Não foi possível salvar sua avaliação.");
