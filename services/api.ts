@@ -1,16 +1,25 @@
 import axios from 'axios';
 import { auth } from './firebase';
 
-const BASE_URL = 'https://aspen-api-crqt.onrender.com';
+// Trocado de aspen-api-crqt.onrender.com pra esse: aquele backend
+// separado não tinha /feedback nem /dashboard/summary (dava 404),
+// enquanto esse é o mesmo backend que o site usa — já testado com
+// pagamento de verdade — e tem TODAS as rotas do projeto, incluindo
+// as novas (feedback, dashboard/summary, consents, sessions).
+// IMPORTANTE: se depois de testar alguma coisa que já funcionava parar
+// de funcionar (login, /auth/me, /devices), pode ser que esse backend
+// use um caminho diferente pra alguma rota específica — me avisa que a
+// gente ajusta pontualmente, sem precisar voltar pro domínio antigo.
+const BASE_URL = 'https://aspencore.onrender.com/api';
 
 const api = axios.create({
   baseURL: BASE_URL,
-  // 30s em vez de 10s: o backend roda no plano free do Render, que
-  // hiberna após alguns minutos sem uso — a primeira requisição depois
-  // de um tempo parado pode levar 30-50s só pra "acordar" o servidor.
-  // Com 10s, essa primeira chamada sempre estourava o timeout antes do
-  // servidor responder, mesmo com o app e o backend funcionando direito.
-  timeout: 30000,
+  // 20s: o backend roda no plano free do Render, que hiberna após
+  // alguns minutos sem uso — a primeira requisição depois de um tempo
+  // parado pode levar bem mais que os 10s originais só pra "acordar" o
+  // servidor. 20s é um meio-termo: cobre a maioria dos cold starts sem
+  // deixar o app "travado" esperando de mais numa falha real.
+  timeout: 20000,
 });
 
 api.interceptors.request.use(async (config) => {
@@ -23,22 +32,5 @@ api.interceptors.request.use(async (config) => {
   }
   return config;
 });
-
-// Se a requisição falhar por timeout (backend ainda "acordando") ou por
-// erro de rede, tenta mais UMA vez automaticamente antes de desistir —
-// cobre exatamente o caso de cold start do Render sem precisar que o
-// usuário toque em "tentar novamente" manualmente.
-api.interceptors.response.use(
-  (response) => response,
-  async (error) => {
-    const config = error.config;
-    const éTimeoutOuRede = error.code === 'ECONNABORTED' || !error.response;
-    if (éTimeoutOuRede && config && !config.__retriedAfterColdStart) {
-      config.__retriedAfterColdStart = true;
-      return api(config);
-    }
-    return Promise.reject(error);
-  },
-);
 
 export default api;

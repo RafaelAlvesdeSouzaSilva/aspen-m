@@ -13,7 +13,9 @@
       "bundleIdentifier": "com.aspencore.app",
       "infoPlist": {
         "NFCReaderUsageDescription": "Usado para autenticação segura via NFC",
-        "NSFaceIDUsageDescription": "Usado para confirmar sua identidade antes de liberar o acesso"
+        "NSFaceIDUsageDescription": "Usado para confirmar sua identidade antes de liberar o acesso",
+        "NSBluetoothAlwaysUsageDescription": "A Aspen Core usa Bluetooth para detectar sua Aspen Key por perto.",
+        "NSLocationWhenInUseUsageDescription": "Usado para registrar sua localização como referência da última posição conhecida da sua Aspen Key."
       }
     },
     "android": {
@@ -26,7 +28,10 @@
       "permissions": [
         "android.permission.NFC",
         "android.permission.USE_BIOMETRIC",
-        "android.permission.USE_FINGERPRINT"
+        "android.permission.USE_FINGERPRINT",
+        "android.permission.BLUETOOTH_SCAN",
+        "android.permission.BLUETOOTH_CONNECT",
+        "android.permission.ACCESS_FINE_LOCATION"
       ],
       "gradleProperties": {
         "newArchEnabled": false
@@ -54,6 +59,21 @@
           "imageWidth": 250,
           "resizeMode": "cover",
           "backgroundColor": "#1B6A6E"
+        }
+      ],
+      [
+        "react-native-ble-plx",
+        {
+          "isBackgroundEnabled": false,
+          "modes": ["central"],
+          "bluetoothAlwaysPermission": "A Aspen Core usa Bluetooth para detectar sua Aspen Key por perto."
+        }
+      ],
+      "@maplibre/maplibre-react-native",
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Usado para registrar sua localização como referência da última posição conhecida da sua Aspen Key."
         }
       ]
     ],

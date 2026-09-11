@@ -88,7 +88,14 @@ export default function Avaliacoes() {
       const res = await api.get("/feedback/mine");
       setLista(extrairFeedbacks(res));
     } catch (err: any) {
-      setErro(err?.response?.data?.message ?? "Não foi possível carregar suas avaliações.");
+      console.error("Erro ao carregar /feedback/mine:", err?.response?.status, err?.response?.data, err?.message);
+      const status = err?.response?.status;
+      const detalhe = err?.response?.data?.message ?? err?.message ?? "erro desconhecido";
+      setErro(
+        status
+          ? `Não foi possível carregar suas avaliações. (HTTP ${status}: ${detalhe})`
+          : `Não foi possível carregar suas avaliações. (${detalhe})`,
+      );
     } finally {
       setCarregando(false);
       setAtualizando(false);
@@ -144,7 +151,14 @@ export default function Avaliacoes() {
       await carregar(false);
       setModalForm(false);
     } catch (err: any) {
-      setErroForm(err?.response?.data?.message ?? "Não foi possível salvar sua avaliação.");
+      console.error("Erro ao salvar feedback:", err?.response?.status, err?.response?.data, err?.message);
+      const status = err?.response?.status;
+      const detalhe = err?.response?.data?.message ?? err?.message ?? "erro desconhecido";
+      setErroForm(
+        status
+          ? `Não foi possível salvar sua avaliação. (HTTP ${status}: ${detalhe})`
+          : `Não foi possível salvar sua avaliação. (${detalhe})`,
+      );
     } finally {
       setSalvando(false);
     }

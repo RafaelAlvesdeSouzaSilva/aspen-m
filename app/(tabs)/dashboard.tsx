@@ -97,32 +97,41 @@ export default function Dashboard() {
   useEffect(() => {
     registerSession(); // fire-and-forget, igual ao loadUser() do web
 
-    async function carregar() {
-      try {
-        const [resUser, resSummary] = await Promise.all([
-          api.get("/auth/me"),
-          // Endpoint que o Igor já tinha pronto no backend e o mobile nunca
-          // usava — calcula dispositivos/alertas/nível de proteção/atividade
-          // de verdade a partir dos eventos reais da conta, em vez de
-          // valores fixos ("2 alertas", "Alto" sempre).
-          api.get("/dashboard/summary"),
-        ]);
-        setUsuario(extrairUsuario(resUser));
+    // Antes essas duas chamadas rodavam juntas (Promise.all) — se uma
+    // travasse ou demorasse, a tela inteira ficava esperando as duas,
+    // mesmo que a outra já tivesse respondido rápido. Agora cada uma
+    // segue seu próprio caminho: o nome/plano aparece assim que
+    // /auth/me responder, sem depender do /dashboard/summary.
+    api.get("/auth/me")
+      .then((res) => setUsuario(extrairUsuario(res)))
+      .catch((err) => console.error("Erro ao carregar /auth/me:", err));
 
-        const summary = extrairSummary(resSummary);
-        setNumDispositivos(String(summary?.devices?.total ?? 0));
-        setNumOnline(summary?.devices?.online ?? 0);
+    // Card de "Dispositivos" usa o /devices direto — mesmo endpoint que
+    // a tela de Dispositivos já usa e sabemos que funciona nesse deploy,
+    // em vez de depender só do /dashboard/summary (que parece não estar
+    // disponível nessa instância do backend).
+    api.get("/devices")
+      .then((res) => {
+        const lista = res.data?.data?.devices ?? res.data?.devices ?? (Array.isArray(res.data) ? res.data : []);
+        setNumDispositivos(String(lista.length));
+        setNumOnline(lista.filter((d: any) => d.status === "online").length);
+      })
+      .catch((err) => console.error("Erro ao carregar /devices no dashboard:", err));
+
+    api.get("/dashboard/summary")
+      .then((res) => {
+        // Endpoint que o Igor já tinha pronto no backend e o mobile nunca
+        // usava — calcula dispositivos/alertas/nível de proteção/atividade
+        // de verdade a partir dos eventos reais da conta, em vez de
+        // valores fixos ("2 alertas", "Alto" sempre).
+        const summary = extrairSummary(res);
         setAlertasAtual(summary?.alerts?.current ?? 0);
         setAlertasAnterior(summary?.alerts?.previous ?? 0);
         setProtecao(summary?.protectionLevel ?? null);
         setAtividade(Array.isArray(summary?.activity) ? summary.activity.slice(0, 3) : []);
-      } catch (err) {
-        console.error("Erro ao carregar dashboard:", err);
-      } finally {
-        setCarregandoResumo(false);
-      }
-    }
-    carregar();
+      })
+      .catch((err) => console.error("Erro ao carregar /dashboard/summary:", err))
+      .finally(() => setCarregandoResumo(false));
   }, []);
 
   // Prévia das notificações — mesma fonte (Firestore em tempo real) da
@@ -342,6 +351,7 @@ export default function Dashboard() {
               { label: t("settings"), icon: "settings-outline", route: "/(tabs)/configuracoes" },
               { label: t("notifications"), icon: "notifications-outline", route: "/(tabs)/notificacao" },
               { label: "Avaliações", icon: "chatbubble-ellipses-outline", route: "/(tabs)/avaliacoes" },
+              { label: "Minhas Aspen Keys", icon: "key-outline", route: "/(tabs)/aspen-keys" },
             ].map((item) => (
               <TouchableOpacity key={item.label} style={styles.dropdownItem} onPress={() => { setMenuAberto(false); router.push(item.route as any); }}>
                 <Ionicons name={item.icon as any} size={18} color={colors.textSec} />
